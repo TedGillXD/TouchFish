@@ -12,6 +12,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent, Rectangle } from "electron";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { normalizeData, type AppData } from "../src/core";
+import { createUpdaterController } from "./updater";
 
 const WIDTH = 440;
 const HEIGHT = 680;
@@ -35,6 +36,12 @@ let lastBlurOverTray = false;
 let settingsPending = false;
 let writeQueue: Promise<void> = Promise.resolve();
 let lastWriteError: Error | null = null;
+let updater: ReturnType<typeof createUpdaterController> | null = null;
+
+function updateController() {
+  if (!updater) throw new Error("更新服务尚未就绪。");
+  return updater;
+}
 
 function trustedSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   return (
@@ -278,6 +285,31 @@ async function requestQuit(): Promise<void> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle("updater:get", (event) => {
+    assertTrusted(event);
+    return updateController().getState();
+  });
+  ipcMain.handle("updater:check", (event) => {
+    assertTrusted(event);
+    return updateController().check();
+  });
+  ipcMain.handle("updater:download", (event) => {
+    assertTrusted(event);
+    return updateController().download();
+  });
+  ipcMain.handle("updater:open-release", (event) => {
+    assertTrusted(event);
+    return updateController().openReleasePage();
+  });
+  ipcMain.handle("updater:install", async (event) => {
+    assertTrusted(event);
+    try {
+      await updateController().install();
+    } catch (error) {
+      quitAllowed = false;
+      throw error;
+    }
+  });
   ipcMain.handle("data:load", async (event) => {
     assertTrusted(event);
     await writeQueue;
@@ -422,6 +454,15 @@ function createTray(): void {
   const contextMenu = Menu.buildFromTemplate([
     { label: "打开摸鱼时钟", click: () => showWindow() },
     { label: "偏好设置", click: () => showWindow(true) },
+    {
+      label: "检查应用更新",
+      click: () => {
+        showWindow(true);
+        void updateController()
+          .check()
+          .catch(() => {});
+      },
+    },
     { type: "separator" },
     { label: "退出", click: () => void requestQuit() },
   ]);
@@ -450,6 +491,7 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    updater?.dispose();
     tray?.destroy();
     tray = null;
   });
@@ -457,6 +499,22 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (process.platform === "darwin") app.dock?.hide();
+      updater = createUpdaterController({
+        onState: (state) => {
+          if (state.status === "error") quitAllowed = false;
+          if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+            win.webContents.send("updater:state", state);
+        },
+        beforeInstall: async () => {
+          await writeQueue;
+          if (lastWriteError)
+            throw new Error("工作记录尚未保存，请先重试保存，再安装更新。");
+          quitAllowed = true;
+        },
+        quitForManualInstall: () => {
+          app.quit();
+        },
+      });
       registerIpc();
       createTray();
       await createWindow();

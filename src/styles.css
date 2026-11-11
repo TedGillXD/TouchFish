@@ -1360,6 +1360,87 @@ svg {
 .payday-shortcut {
   color: #809f8c;
 }
+.update-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.update-heading h2 {
+  margin: 0;
+}
+.update-heading > span {
+  font-size: 10px;
+  color: #a1ada6;
+  font-variant-numeric: tabular-nums;
+}
+.update-proxy {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #8ca697;
+  font-size: 9px;
+  line-height: 1.7;
+  margin: 0 0 10px;
+}
+.update-message {
+  color: #8e9c94;
+  font-size: 10px;
+  line-height: 1.8;
+  margin: 0 0 13px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.update-message.failed {
+  color: #ad7b66;
+}
+.update-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.update-actions > .secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 35px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+.update-actions > .primary {
+  min-height: 35px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+.update-actions > button:disabled {
+  opacity: 0.55;
+}
+.update-download {
+  margin-bottom: 13px;
+}
+.update-download > span {
+  display: block;
+  margin-top: 6px;
+  font-size: 9px;
+  color: #98a69d;
+  font-variant-numeric: tabular-nums;
+}
+.update-save-hint {
+  margin: 9px 0 0;
+  font-size: 9px;
+  color: #a58c63;
+  line-height: 1.7;
+}
+.spinning {
+  animation: spin 1.3s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,

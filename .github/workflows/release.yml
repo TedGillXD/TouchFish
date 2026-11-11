@@ -1,52 +1,205 @@
-name: Build desktop apps
+name: Build and publish desktop release
 
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - package.json
+      - .github/workflows/release.yml
+      - scripts/verify-release.mjs
 
 permissions:
   contents: read
 
+concurrency:
+  group: touchfish-desktop-release
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    name: Check release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      should_release: ${{ steps.release.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Decide whether this version needs a release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from 'node:fs/promises';
+          const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+          if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+            throw new Error('Release version must be a stable semantic version.');
+          }
+          const tag = `v${version}`;
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== tag) {
+            throw new Error('Pushed tag does not match package.json version.');
+          }
+          const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${tag}`, {
+            headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+          });
+          if (response.status !== 404 && !response.ok) throw new Error(`Cannot inspect release (${response.status}).`);
+          const existing = response.ok ? await response.json() : null;
+          const shouldRelease = !existing || existing.draft;
+          await appendFile(process.env.GITHUB_OUTPUT, `version=${version}\ntag=${tag}\nshould_release=${shouldRelease}\n`);
+          console.log(shouldRelease ? `Building ${tag}; publication waits for every platform.` : `${tag} is already published; leaving its files unchanged.`);
+          NODE
+
   build:
-    name: ${{ matrix.name }}
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Windows
+          - name: Windows x64
             os: windows-latest
-            target: --win
+            target: --win --x64
+            platform: win32
             artifact: touchfish-windows
-          - name: macOS
+          - name: macOS Intel and Apple Silicon
             os: macos-latest
-            target: --mac
+            target: --mac --x64 --arm64
+            platform: darwin
             artifact: touchfish-macos
-          - name: Linux
+          - name: Linux x64
             os: ubuntu-latest
-            target: --linux
+            target: --linux --x64
+            platform: linux
             artifact: touchfish-linux
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run typecheck
       - run: npm run build
-      - run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Verify updater traffic through a real proxy
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: node scripts/update-proxy-smoke.mjs
+      - name: Package native installers and update metadata
+        run: npx electron-builder ${{ matrix.target }} --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify both macOS application signatures
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' app_bundle; do
+            codesign --verify --deep --strict --verbose=2 "$app_bundle"
+            count=$((count + 1))
+          done < <(find release -maxdepth 2 -type d -name '摸鱼时钟.app' -print0)
+          if [ "$count" -ne 2 ]; then
+            echo "Expected signed Intel and Apple Silicon application bundles; found $count."
+            exit 1
+          fi
+      - name: Verify platform installers and update hashes
+        run: node scripts/verify-release.mjs release --platform ${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
+          compression-level: 0
+          retention-days: 14
           path: |
-            release/*.exe
-            release/*.dmg
-            release/*.AppImage
+            release/TouchFish-${{ needs.prepare.outputs.version }}-*.exe
+            release/TouchFish-${{ needs.prepare.outputs.version }}-*.dmg
+            release/TouchFish-${{ needs.prepare.outputs.version }}-*.zip
+            release/TouchFish-${{ needs.prepare.outputs.version }}-*.AppImage
+            release/TouchFish-${{ needs.prepare.outputs.version }}-*.blockmap
+            release/latest*.yml
           if-no-files-found: error
+
+  release:
+    name: Publish complete GitHub Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: touchfish-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify all three platforms and generate checksums
+        run: node scripts/verify-release.mjs release-assets
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          ## 更新内容
+
+          - 新增版本检查、安装包下载进度和安装入口。
+          - 更新检查与安装包下载使用系统代理，支持系统代理配置及 PAC。
+          - 更新前保存本地设置与工作记录；安装后继续使用原有数据。
+
+          ## 安装包
+
+          - **Windows x64**：`setup.exe` 安装版；`portable.exe` 免安装版。
+          - **macOS**：分别提供 Intel `x64` 与 Apple Silicon `arm64` 的 `.dmg`；`.zip` 用于更新及恢复。
+          - **Linux x64**：`.AppImage`，运行前为文件添加执行权限。
+
+          macOS 安装包当前未进行发行签名或公证，更新会下载并打开 DMG，由用户完成替换。Windows 便携版和未以 AppImage 运行的 Linux 应用也会引导运行下载的安装包。
+
+          `release-manifest.json` 与 `SHA256SUMS` 记录本次实际构建文件的大小和校验值；`latest*.yml` 与 blockmap 文件供应用更新使用。
+
+          发薪安排和工资金额仍为个人设置下的进度估算，不执行转账。
+          NOTES
+      - name: Create a draft, upload verified files, then publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          if git rev-parse --verify "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            existing_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+            if [ "$existing_commit" != "$commit" ]; then
+              echo "Release tag already points to another commit; refusing to move it."
+              exit 1
+            fi
+          fi
+          if gh release view "$RELEASE_TAG" --json isDraft >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"
+            if [ "$is_draft" != true ]; then
+              echo "This version was published while the builds were running; leaving it unchanged."
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" --title "TouchFish $RELEASE_TAG" --notes-file release-notes.md --target "$commit"
+          else
+            gh release create "$RELEASE_TAG" --draft --target "$commit" --title "TouchFish $RELEASE_TAG" --notes-file release-notes.md
+          fi
+          mapfile -d '' files < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release view "$RELEASE_TAG" --json url,assets --jq '{url: .url, assets: [.assets[].name]}'

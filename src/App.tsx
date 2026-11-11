@@ -51,6 +51,7 @@ import {
   type Settings,
 } from "./core";
 import { getPublicHoliday, PUBLIC_HOLIDAY_YEARS } from "./holidays";
+import UpdatePanel from "./UpdatePanel";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -1003,6 +1004,9 @@ function SettingsPanel({
           {loginError && <p className="field-error">{loginError}</p>}
         </section>
       )}
+      <UpdatePanel
+        hasUnsavedSettings={JSON.stringify(draft) !== JSON.stringify(settings)}
+      />
       <div className="formula-note">
         <CircleHelp size={16} />
         <p>
