@@ -181,7 +181,7 @@ try {
   await expect
     .poll(() =>
       app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].isVisible(),
+        BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("window=floating")).isVisible(),
       ),
     )
     .toBe(false);
@@ -189,7 +189,7 @@ try {
   await expect
     .poll(() =>
       app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].isVisible(),
+        BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("window=floating")).isVisible(),
       ),
     )
     .toBe(true);
@@ -206,7 +206,7 @@ try {
     page.getByRole("switch", { name: "排除公共假期" }),
   ).toHaveAttribute("aria-checked", "true");
   const dimensions = await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].getBounds(),
+    BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("window=floating")).getBounds(),
   );
   expect(dimensions.width).toBe(440);
   expect(dimensions.height).toBe(680);

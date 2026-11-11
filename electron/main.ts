@@ -13,6 +13,7 @@ import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { normalizeData, type AppData } from "../src/core";
 import { createUpdaterController } from "./updater";
+import { createFloatingController } from "./floating-window";
 
 const WIDTH = 440;
 const HEIGHT = 680;
@@ -36,7 +37,9 @@ let lastBlurOverTray = false;
 let settingsPending = false;
 let writeQueue: Promise<void> = Promise.resolve();
 let lastWriteError: Error | null = null;
+let liveData: AppData | null = null;
 let updater: ReturnType<typeof createUpdaterController> | null = null;
+let floating: Awaited<ReturnType<typeof createFloatingController>> | null = null;
 
 function updateController() {
   if (!updater) throw new Error("更新服务尚未就绪。");
@@ -123,6 +126,18 @@ function saveState(value: unknown): Promise<void> {
     data = parseState(text);
   } catch {
     return Promise.reject(new Error("数据格式不正确，未覆盖已保存的记录。"));
+  }
+  // The main renderer owns the active session. A disk failure must not leave
+  // the read-only companion counting an interval that was already paused.
+  liveData = data;
+  const floatingWindow = floating?.getWindow();
+  if (floatingWindow && !floatingWindow.isDestroyed() && !floatingWindow.webContents.isDestroyed()) {
+    try {
+      floatingWindow.webContents.send("data:changed", data);
+    } catch {
+      // Reloading the companion obtains liveData; notification failures must
+      // never prevent the work record from reaching the disk queue.
+    }
   }
   const normalizedText = JSON.stringify(data, null, 2);
   const operation = writeQueue.then(async () => {
@@ -274,6 +289,11 @@ async function requestQuit(): Promise<void> {
   if (quitPending) return;
   quitPending = true;
   await writeQueue;
+  try {
+    await floating?.flush();
+  } catch {
+    dialog.showErrorBox("悬浮窗设置保存失败", "本次窗口位置可能无法保留，请检查应用数据目录权限。");
+  }
   if (lastWriteError) {
     dialog.showErrorBox(
       "本地数据保存失败",
@@ -311,13 +331,15 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle("data:load", async (event) => {
-    assertTrusted(event);
+    const isFloating = floating?.isSender(event);
+    if (!trustedSender(event) && !isFloating)
+      throw new Error("无法识别的应用请求。");
     await writeQueue;
-    return loadState();
+    return isFloating && liveData ? liveData : loadState();
   });
-  ipcMain.handle("data:save", (event, value: unknown) => {
+  ipcMain.handle("data:save", async (event, value: unknown) => {
     assertTrusted(event);
-    return saveState(value);
+    await saveState(value);
   });
   ipcMain.handle("login:get", (event) => {
     assertTrusted(event);
@@ -451,9 +473,19 @@ function createTray(): void {
   if (process.platform === "darwin") icon.setTemplateImage(true);
   tray = new Tray(icon);
   tray.setToolTip("摸鱼时钟 · 让每一秒都有回报");
-  const contextMenu = Menu.buildFromTemplate([
+  const buildMenu = () => Menu.buildFromTemplate([
     { label: "打开摸鱼时钟", click: () => showWindow() },
     { label: "偏好设置", click: () => showWindow(true) },
+    ...(process.platform === "win32" ? [{
+      label: "显示悬浮窗",
+      type: "checkbox" as const,
+      checked: floating?.getState().enabled ?? true,
+      click: () => {
+        void floating?.setEnabled(!floating.getState().enabled).catch((error: Error) => {
+          dialog.showErrorBox("悬浮窗设置失败", error.message);
+        });
+      },
+    }] : []),
     {
       label: "检查应用更新",
       click: () => {
@@ -466,8 +498,8 @@ function createTray(): void {
     { type: "separator" },
     { label: "退出", click: () => void requestQuit() },
   ]);
-  if (process.platform === "linux") tray.setContextMenu(contextMenu);
-  else tray.on("right-click", () => tray?.popUpContextMenu(contextMenu));
+  if (process.platform === "linux") tray.setContextMenu(buildMenu());
+  else tray.on("right-click", () => tray?.popUpContextMenu(buildMenu()));
   tray.on("click", () => {
     const justClosedByTray = lastBlurOverTray && Date.now() - lastBlur < 600;
     lastBlurOverTray = false;
@@ -491,6 +523,7 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    floating?.dispose();
     updater?.dispose();
     tray?.destroy();
     tray = null;
@@ -499,6 +532,17 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (process.platform === "darwin") app.dock?.hide();
+      floating = await createFloatingController({
+        root,
+        preload: join(__dirname, "preload.cjs"),
+        devServer,
+        isMainSender: trustedSender,
+        showPanel: () => showWindow(),
+        onState: (state) => {
+          if (win && !win.isDestroyed())
+            win.webContents.send("floating:state", state);
+        },
+      });
       updater = createUpdaterController({
         onState: (state) => {
           if (state.status === "error") quitAllowed = false;
@@ -507,6 +551,7 @@ if (!app.requestSingleInstanceLock()) {
         },
         beforeInstall: async () => {
           await writeQueue;
+          await floating?.flush();
           if (lastWriteError)
             throw new Error("工作记录尚未保存，请先重试保存，再安装更新。");
           quitAllowed = true;
@@ -518,6 +563,15 @@ if (!app.requestSingleInstanceLock()) {
       registerIpc();
       createTray();
       await createWindow();
+      try {
+        await floating.initializeWindow();
+      } catch (error) {
+        await floating.setEnabled(false).catch(() => {});
+        dialog.showErrorBox(
+          "悬浮窗暂时无法打开",
+          `完整面板仍可使用，请从偏好设置重试。${error instanceof Error ? error.message : ""}`,
+        );
+      }
     })
     .catch((error: Error) => {
       dialog.showErrorBox("摸鱼时钟启动失败", error.message);

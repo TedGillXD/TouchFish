@@ -52,6 +52,7 @@ import {
 } from "./core";
 import { getPublicHoliday, PUBLIC_HOLIDAY_YEARS } from "./holidays";
 import UpdatePanel from "./UpdatePanel";
+import FloatingSettings from "./FloatingSettings";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -85,7 +86,7 @@ function App() {
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState<View>("home");
   const [payrollFocus, setPayrollFocus] = useState<string | undefined>();
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHidden] = useState(!!window.touchFish);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [confirmFinish, setConfirmFinish] = useState(false);
@@ -118,6 +119,22 @@ function App() {
     return () => clearInterval(timer);
   }, []);
   useEffect(() => window.touchFish?.onSettings(() => setView("settings")), []);
+  useEffect(() => {
+    const api = window.touchFish?.floating;
+    if (!api) return;
+    let active = true;
+    let revision = 0;
+    const unsubscribe = api.onState((state) => {
+      revision++;
+      if (active) setHidden(state.privacy);
+    });
+    void api.getState().then((state) => {
+      if (active && revision === 0) setHidden(state.privacy);
+    }).catch(() => {
+      if (active) setError("无法读取金额隐藏设置，已暂时隐藏金额。");
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
   useEffect(() => {
     if (!data) return;
     const stale = Object.values(data.records).some(
@@ -293,7 +310,12 @@ function App() {
           <button
             className="icon-button"
             title={hidden ? "显示金额" : "隐藏金额"}
-            onClick={() => setHidden(!hidden)}
+            onClick={() => {
+              if (!window.touchFish) setHidden(!hidden);
+              else void window.touchFish.floating.setPrivacy(!hidden).catch(() =>
+                setError("金额隐藏设置保存失败，请重试。"),
+              );
+            }}
           >
             {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
@@ -1004,6 +1026,7 @@ function SettingsPanel({
           {loginError && <p className="field-error">{loginError}</p>}
         </section>
       )}
+      <FloatingSettings />
       <UpdatePanel
         hasUnsavedSettings={JSON.stringify(draft) !== JSON.stringify(settings)}
       />

@@ -1,5 +1,6 @@
 import type { AppData } from "./core";
 import type { UpdateState } from "./update-types";
+import type { FloatingState } from "./floating-types";
 
 declare global {
   interface Window {
@@ -7,12 +8,22 @@ declare global {
       readonly platform: string;
       loadData(): Promise<AppData | null>;
       saveData(data: AppData): Promise<void>;
+      onData(callback: (data: AppData) => void): () => void;
       hide(): void;
       quit(): void;
       getLogin(): Promise<boolean>;
       setLogin(enabled: boolean): Promise<void>;
       onSettings(callback: () => void): () => void;
       updateStatus?(message: string): void;
+      floating: {
+        getState(): Promise<FloatingState>;
+        setEnabled(enabled: boolean): Promise<FloatingState>;
+        setExpanded(expanded: boolean): Promise<FloatingState>;
+        setPrivacy(privacy: boolean): Promise<FloatingState>;
+        openPanel(): void;
+        menu(): void;
+        onState(callback: (state: FloatingState) => void): () => void;
+      };
       updater: {
         getState(): Promise<UpdateState>;
         check(): Promise<UpdateState>;

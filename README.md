@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.1-1f9d75?style=flat-square" alt="版本 1.3.1" />
+  <img src="https://img.shields.io/badge/version-1.4.0-1f9d75?style=flat-square" alt="版本 1.4.0" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -43,6 +43,7 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 | 周期记录       | 浏览前后各期的工作记录、计划发薪日和调整后日期，首页显示下次发薪倒计时       |
 | 应用更新       | 在设置中检查新版、下载更新包；检查与下载均使用系统代理配置，并校验文件完整性 |
 | 托盘与隐私     | 点击面板外部即可收起，后台继续记录；支持隐藏金额与本地数据备份               |
+| Windows 悬浮窗 | 置顶显示今日计薪进度，展开查看收入、时长与状态；支持拖动、记住位置和同步隐藏金额 |
 
 <a id="preview"></a>
 
@@ -104,6 +105,22 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 6. 在「薪资周期」中切换前后周期，查看工作记录及发薪安排。
 
 点击面板外部会收起窗口，计时仍在后台运行。通过托盘右键菜单或面板底部「退出」关闭应用。升级时先退出旧版，再启动新版。
+
+### Windows 悬浮窗
+
+Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今日计薪进度；点击箭头展开，即可查看今日税前收入、已计薪时长和当前状态。暂停、午休、晚饭和下班后的数字与完整面板保持一致。
+
+<p>
+  <img src="docs/floating-compact.png" width="164" height="44" alt="Windows 悬浮窗收起状态：今日工作进度 20.2%" />
+  <img src="docs/floating-window.png" width="264" height="148" alt="Windows 悬浮窗展开状态：今日收入、计薪时长与工作状态" />
+</p>
+
+- 拖动非按钮区域可调整位置，重启后会记住位置；显示器变化时会将窗口移回可见工作区。
+- 点击悬浮窗的图标或「打开完整面板」，可返回主界面开始、暂停或结束工作。
+- 在主面板隐藏金额后，悬浮窗同步隐藏金额；隐私状态会在重启后保留。
+- 右键点击悬浮窗图标，可展开或收起、隐藏金额、重置位置或隐藏悬浮窗；也可在「偏好设置」或托盘右键菜单中切换显示。隐藏悬浮窗后，后台计时仍继续。
+
+悬浮窗仅在 Windows 提供，macOS 与 Linux 继续使用系统托盘面板。
 
 <a id="payroll"></a>
 
@@ -170,6 +187,7 @@ npm run dev
 | `npm run typecheck`    | 执行 TypeScript 类型检查                 |
 | `npm run build`        | 构建界面与 Electron 主进程               |
 | `npm run test:desktop` | 使用隔离数据运行真实桌面流程检查         |
+| `npm run test:floating` | 在 Windows 检查悬浮窗同步、隐私和位置持久化 |
 | `npm start`            | 启动已构建的桌面应用                     |
 
 项目使用 **Electron + React + TypeScript + Vite**。核心测试覆盖短月与闰年、大小周、休息时段、跨月周期、长假调整、历史记录迁移及夏令时日期计算。
@@ -216,6 +234,7 @@ Linux 托盘可用性取决于桌面环境，部分 GNOME 环境需要 AppIndica
 
 - `state.json`：当前设置与计时记录。
 - `state.backup.json`：上一份有效数据。
+- `floating.json`：悬浮窗显示、展开、位置与金额隐私偏好。
 
 实际位置由 Electron 与运行方式决定。备份或迁移前先退出应用，再复制整个用户数据目录。测试可用 `TOUCHFISH_USER_DATA` 指定独立目录；使用 `--hidden` 启动可直接常驻托盘。
 

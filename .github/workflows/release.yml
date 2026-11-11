@@ -94,6 +94,10 @@ jobs:
         if: matrix.platform == 'win32'
         timeout-minutes: 5
         run: node scripts/update-proxy-smoke.mjs
+      - name: Verify Windows floating window
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: node scripts/floating-smoke.mjs
       - name: Package native installers and update metadata
         run: npx electron-builder ${{ matrix.target }} --publish never
         env:
@@ -161,10 +165,10 @@ jobs:
           cat > release-notes.md <<'NOTES'
           ## 更新内容
 
-          - 新增版本检查、安装包下载进度和安装入口。
-          - 检查更新直接读取官方 Release 清单，避免共享 IP 下 GitHub API 配额耗尽导致检查失败。
-          - 更新检查与安装包下载使用系统代理，支持系统代理配置及 PAC。
-          - 更新前保存本地设置与工作记录；安装后继续使用原有数据。
+          - 新增 Windows 桌面悬浮窗：紧凑显示今日工作进度，展开查看税前收入、计薪时长与工作状态。
+          - 支持拖动、记住位置、置顶显示与多显示器位置恢复；在设置或托盘菜单中随时开关。
+          - 金额隐藏状态在主面板和悬浮窗间同步；悬浮窗只读现有计时记录，午休、晚饭与暂停沿用同一计薪规则。
+          - 保留三平台安装包与跟随系统代理的应用内更新，升级继续使用本地设置和工作记录。
 
           ## 安装包
 
