@@ -562,23 +562,23 @@ svg {
 .salary-note:hover {
   color: #518d71;
 }
-.home-content .greeting { margin-bottom: 8px; }
-.home-content .earnings-card { padding-top: 13px; padding-bottom: 11px; }
+.home-content .greeting { margin-bottom: 6px; }
+.home-content .earnings-card { padding-top: 12px; padding-bottom: 10px; }
 .home-content .earnings { margin: 9px 0 10px; font-size: 40px; }
 .home-content .earnings-details { margin-top: 9px; padding-top: 9px; }
-.home-content .work-section { margin-top: 11px; }
+.home-content .work-section { margin-top: 9px; }
 .home-content .work-section .section-label { margin-bottom: 8px; }
 .home-content .schedule-line { margin-bottom: 9px; }
 .home-content .schedule-icon { height: 32px; width: 32px; }
 .home-content .work-hint { margin-top: 5px; }
-.home-content .month-section { margin-top: 10px; }
+.home-content .month-section { margin-top: 8px; }
 .home-content .month-section .section-label { margin-bottom: 7px; }
 .home-content .stat-card { padding-top: 8px; padding-bottom: 8px; }
 .countdown-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 11px;
-  margin: 10px 0 2px;
+  margin: 8px 0 2px;
 }
 .countdown-card {
   --countdown-accent: #16865e;

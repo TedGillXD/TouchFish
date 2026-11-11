@@ -75,7 +75,7 @@ async function jumpTo(value) {
   await main.clock.fastForward(delta);
 }
 
-async function assertFits() {
+async function assertCurrentFontFits(font) {
   const size = await desktop.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().find(win =>
       win.webContents.getURL().endsWith("/index.html")).getBounds());
@@ -92,7 +92,7 @@ async function assertFits() {
     })),
   }));
   if (metrics.total > metrics.height + 1) {
-    console.log(JSON.stringify(metrics));
+    console.log(JSON.stringify({ font, ...metrics }));
     await main.screenshot({ path: ".cache/countdown-overflow.png", scale: "css" });
   }
   expect(await main.locator(".main-content").evaluate(element => ({
@@ -105,6 +105,17 @@ async function assertFits() {
       const area = document.querySelector(".main-content").getBoundingClientRect();
       return bounds.top >= area.top && bounds.bottom <= area.bottom + 1;
     })).toBe(true);
+  }
+}
+
+async function assertFits() {
+  await assertCurrentFontFits("application font stack");
+  const style = await main.addStyleTag({ content: ":root { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif !important; }" });
+  try {
+    await main.evaluate(() => document.fonts.ready);
+    await assertCurrentFontFits("system sans-serif fallback");
+  } finally {
+    await style.evaluate(element => element.remove());
   }
 }
 
