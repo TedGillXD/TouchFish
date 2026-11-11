@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import holidayFixture from "../tests/fixtures/china-holidays.json";
+import { installHolidayData } from "./holidays";
 import {
   countWorkdays,
   dateKey,
@@ -21,6 +23,9 @@ import {
   shiftPayrollPeriod,
   validateSettings,
 } from "./core";
+
+// Payroll rules are tested against explicit data, never an application bundle.
+installHolidayData(holidayFixture);
 
 const time = (key: string, hhmm: string) =>
   new Date(`${key}T${hhmm}:00`).getTime();

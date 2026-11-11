@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import holidayFixture from "../tests/fixtures/china-holidays.json";
+import { installHolidayData } from "./holidays";
 import {
   defaultSettings,
   emptyData,
@@ -12,6 +14,8 @@ import {
   shiftPayrollPeriod,
   startWork,
 } from "./core";
+
+installHolidayData(holidayFixture);
 
 // Independent calendar iteration for invariant checks (not payroll implementation helpers).
 const addDays = (key: string, count: number) =>

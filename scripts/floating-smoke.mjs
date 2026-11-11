@@ -1,3 +1,4 @@
+import { seedHolidayCache } from "./test-holiday-cache.mjs";
 import { _electron as electron, expect } from "@playwright/test";
 import electronPath from "electron";
 import { mkdir, mkdtemp, readFile, rmdir } from "node:fs/promises";
@@ -11,10 +12,12 @@ if (process.platform !== "win32") {
 // Use an actual Electron process and isolated files; never touch the user's data.
 await mkdir(".cache", { recursive: true });
 const userData = await mkdtemp(resolve(".cache/floating-smoke-"));
+await seedHolidayCache(userData);
 const env = {
   ...process.env,
   TOUCHFISH_USER_DATA: userData,
   TOUCHFISH_KEEP_OPEN: "1",
+  TOUCHFISH_HOLIDAYS_AUTO_REFRESH: "0",
 };
 delete env.ELECTRON_RUN_AS_NODE;
 let app;

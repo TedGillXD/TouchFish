@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { emptyData, getDaySummary, normalizeData, type AppData } from "./core";
 import type { FloatingState } from "./floating-types";
+import { dateKey } from "./core";
+import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 
 const duration = (seconds: number) => {
   const value = Math.floor(Math.max(0, seconds));
@@ -23,6 +25,7 @@ const money = (value: number) =>
 
 /** A read-only companion. Work records are changed only in the full panel. */
 export default function FloatingWindow() {
+  useHolidayState();
   const [data, setData] = useState<AppData | null>(null);
   const [state, setState] = useState<FloatingState | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -30,6 +33,7 @@ export default function FloatingWindow() {
   const [actionError, setActionError] = useState("");
   const [reload, setReload] = useState(0);
   const api = window.touchFish?.floating;
+  useHolidayYears(yearsForDates(dateKey(now)), data?.settings.publicHolidays !== false);
 
   useEffect(() => {
     const desktop = window.touchFish;

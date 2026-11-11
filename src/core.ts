@@ -1,5 +1,5 @@
 /** Local, deterministic payroll estimates. All timestamps are milliseconds. */
-import { getPublicHoliday, PUBLIC_HOLIDAY_YEARS } from "./holidays";
+import { getPublicHoliday, getHolidayYears } from "./holidays";
 export type ScheduleMode = "double" | "single" | "alternate";
 export interface DayHours {
   start: string;
@@ -449,12 +449,17 @@ function coveredHolidayYears(
   if (!settings.publicHolidays) return true;
   const firstYear = Number(start.slice(0, 4)),
     lastYear = Number(end.slice(0, 4));
+  const [firstDate, lastDate] = start <= end ? [start, end] : [end, start];
+  const available = getHolidayYears();
   for (
     let year = Math.min(firstYear, lastYear);
     year <= Math.max(firstYear, lastYear);
     year++
   ) {
-    if (!PUBLIC_HOLIDAY_YEARS.includes(year)) return false;
+    if (!available.includes(year)) return false;
+    // The following year's New Year notice can change this December's days.
+    if (firstDate <= `${year}-12-31` && lastDate >= `${year}-12-01` &&
+      !available.includes(year + 1)) return false;
   }
   return true;
 }

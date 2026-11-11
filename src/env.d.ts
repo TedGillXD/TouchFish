@@ -1,6 +1,7 @@
 import type { AppData } from "./core";
 import type { UpdateState } from "./update-types";
 import type { FloatingState } from "./floating-types";
+import type { HolidayState } from "./holiday-types";
 
 declare global {
   interface Window {
@@ -15,6 +16,11 @@ declare global {
       setLogin(enabled: boolean): Promise<void>;
       onSettings(callback: () => void): () => void;
       updateStatus?(message: string): void;
+      holidays: {
+        getState(): Promise<HolidayState>;
+        refresh(years?: number[], force?: boolean): Promise<HolidayState>;
+        onState(callback: (state: HolidayState) => void): () => void;
+      };
       floating: {
         getState(): Promise<FloatingState>;
         setEnabled(enabled: boolean): Promise<FloatingState>;

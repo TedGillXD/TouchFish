@@ -50,7 +50,9 @@ import {
   type AppData,
   type Settings,
 } from "./core";
-import { getPublicHoliday, PUBLIC_HOLIDAY_YEARS } from "./holidays";
+import { getPublicHoliday, getHolidayYears } from "./holidays";
+import HolidaySettings from "./HolidaySettings";
+import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 import UpdatePanel from "./UpdatePanel";
 import FloatingSettings from "./FloatingSettings";
 import {
@@ -82,6 +84,7 @@ const clockTime = (timestamp: number) =>
   });
 
 function App() {
+  const holidayState = useHolidayState();
   const [data, setData] = useState<AppData | null>(null);
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState<View>("home");
@@ -168,11 +171,16 @@ function App() {
   const todayKey = dateKey(now);
   const currentPeriod = useMemo(
     () => (data ? getPayrollPeriod(todayKey, data.settings) : null),
-    [data?.settings, todayKey],
+    [data?.settings, todayKey, holidayState.years],
   );
   const nextPayday = useMemo(
     () => (data ? getNextPayday(todayKey, data.settings) : null),
-    [data?.settings, todayKey],
+    [data?.settings, todayKey, holidayState.years],
+  );
+  useHolidayYears(
+    yearsForDates(todayKey, currentPeriod?.start, currentPeriod?.end,
+      currentPeriod?.nominalPayday, nextPayday?.nominalPayday, nextPayday?.actualPayday),
+    data?.settings.publicHolidays !== false,
   );
   useEffect(() => {
     if (summary)
@@ -513,8 +521,12 @@ function App() {
                   </button>
                 )}
               </div>
-              <p className="work-hint">
-                {summary.status === "completed"
+              <p className={`work-hint ${!currentPeriod.holidayCoverageComplete ? "holiday-estimate-hint" : ""}`}>
+                {!currentPeriod.holidayCoverageComplete
+                  ? <button onClick={() => setView("settings")} title="前往设置更新中国大陆节假日">
+                      节假日尚未完整获取，工作日与发薪日暂为估算 <ChevronRight size={11} />
+                    </button>
+                  : summary.status === "completed"
                   ? "下班后停止计薪 · 跨天后可重新开始"
                   : summary.status === "rest"
                     ? "需要加班？在日历中将今天设为工作日"
@@ -923,10 +935,7 @@ function SettingsPanel({
             <span />
           </button>
         </div>
-        <p className="holiday-coverage">
-          已内置 {PUBLIC_HOLIDAY_YEARS.join("、")}{" "}
-          年官方安排，日历中的手动调整优先。
-        </p>
+        <HolidaySettings />
       </section>
       <section className="settings-group">
         <h2>
@@ -1130,6 +1139,7 @@ function CalendarPanel({
     date.getMonth() + 1,
   ]);
   const [year, month] = cursor;
+  useHolidayYears([year, year + 1], settings.publicHolidays);
   const [selected, setSelected] = useState(dateKey(now));
   const days = monthDays(year, month, settings);
   const offset = (new Date(year, month - 1, 1).getDay() + 6) % 7;
@@ -1142,7 +1152,9 @@ function CalendarPanel({
   const selectedHoliday = settings.publicHolidays
     ? getPublicHoliday(selected)
     : null;
-  const hasHolidayData = PUBLIC_HOLIDAY_YEARS.includes(year);
+  const availableHolidayYears = getHolidayYears();
+  const hasHolidayData = availableHolidayYears.includes(year) &&
+    (month !== 12 || availableHolidayYears.includes(year + 1));
   const update = (mode: "work" | "rest" | undefined) => {
     const overrides = { ...settings.overrides };
     if (mode) overrides[selected] = mode;
@@ -1269,7 +1281,7 @@ function CalendarPanel({
         {settings.publicHolidays
           ? hasHolidayData
             ? `已应用中国大陆 ${year} 年官方放假与补班安排，手动调整优先。`
-            : `尚未收录 ${year} 年官方安排，暂按工作制计算，可手动调整。`
+            : `${year} 年及相关跨年节假日数据尚未完整获取或未公布，暂按已有数据与工作制估算，可在设置中更新或手动调整。`
           : "已关闭公共假期，当前按工作制及手动调整计算。"}
         已开始的记录保留当天原有计薪标准。
       </p>

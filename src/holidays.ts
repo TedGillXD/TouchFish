@@ -1,77 +1,107 @@
-/**
- * Published mainland China public-holiday arrangements, available offline.
- * These ranges include the complete announced vacation, including weekends,
- * and the corresponding makeup workdays. Unlisted years are not inferred.
- */
+import type { HolidayYearData } from "./holiday-types";
+
 export interface PublicHoliday {
   kind: "rest" | "work";
   name: string;
 }
 
-export const PUBLIC_HOLIDAY_YEARS: readonly number[] = Object.freeze([
-  2026, 2027,
-]);
+// Runtime data comes only from the downloaded/cache snapshot installed by the
+// holiday service. A new installation has no assumed or bundled holiday dates.
+let calendar = new Map<string, Readonly<PublicHoliday>>();
+let availableYears: number[] = [];
 
-export const PUBLIC_HOLIDAY_SOURCES = Object.freeze([
-  {
-    year: 2026,
-    title: "国务院办公厅关于2026年部分节假日安排的通知",
-    url: "https://www.beijing.gov.cn/zhengce/zhengcefagui/202511/t20251104_4258873.html",
-  },
-  {
-    year: 2027,
-    title: "国务院办公厅关于2027年部分节假日安排的通知",
-    url: "https://chinajob.mohrss.gov.cn/h5/c/2026-11-09/635850.shtml",
-  },
-] as const);
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
 
-const calendar = new Map<string, Readonly<PublicHoliday>>();
-const DAY_MS = 86_400_000;
+function validYear(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1900 && value <= 2299;
+}
 
-// Use UTC calendar arithmetic, so DST or the host timezone cannot move a date.
-function addVacation(name: string, start: string, end: string): void {
-  const first = Date.parse(`${start}T00:00:00Z`);
-  const last = Date.parse(`${end}T00:00:00Z`);
-  for (let day = first; day <= last; day += DAY_MS) {
-    const key = new Date(day).toISOString().slice(0, 10);
-    if (calendar.has(key)) throw new Error(`节假日日期重复：${key}`);
-    calendar.set(key, Object.freeze({ kind: "rest", name }));
+function httpsUrl(value: unknown): URL | null {
+  if (typeof value !== "string" || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url : null;
+  } catch {
+    return null;
   }
 }
 
-function addMakeup(name: string, dates: readonly string[]): void {
-  for (const key of dates) {
-    if (calendar.has(key)) throw new Error(`节假日日期重复：${key}`);
-    calendar.set(key, Object.freeze({ kind: "work", name: `${name}补班` }));
-  }
+function validDate(value: unknown, year: number): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) return false;
+  const dateYear = Number(value.slice(0, 4));
+  return dateYear === year || (dateYear === year - 1 && value.slice(5, 7) === "12");
 }
 
-// 国办发明电〔2025〕7号，2025-11-04。
-addVacation("元旦", "2026-01-01", "2026-01-03");
-addMakeup("元旦", ["2026-01-04"]);
-addVacation("春节", "2026-02-15", "2026-02-23");
-addMakeup("春节", ["2026-02-14", "2026-02-28"]);
-addVacation("清明节", "2026-04-04", "2026-04-06");
-addVacation("劳动节", "2026-05-01", "2026-05-05");
-addMakeup("劳动节", ["2026-05-09"]);
-addVacation("端午节", "2026-06-19", "2026-06-21");
-addVacation("中秋节", "2026-09-25", "2026-09-27");
-addVacation("国庆节", "2026-10-01", "2026-10-07");
-addMakeup("国庆节", ["2026-09-20", "2026-10-10"]);
+/** Validate a holiday-cn response before it can affect payroll or disk caches. */
+export function parseHolidayYear(
+  raw: unknown,
+  expectedYear: number,
+  fetchedAt: number,
+  source: string,
+): HolidayYearData {
+  if (!validYear(expectedYear) || !isObject(raw) || raw.year !== expectedYear)
+    throw new Error("节假日数据年份不正确。");
+  if (!Number.isFinite(fetchedAt) || fetchedAt < 0 || fetchedAt > 8.64e15 || !httpsUrl(source))
+    throw new Error("节假日数据来源或获取时间不正确。");
+  if (!Array.isArray(raw.papers) || !Array.isArray(raw.days))
+    throw new Error("节假日数据格式不正确。");
+  if (!raw.papers.length || !raw.days.length)
+    throw new Error("该年度节假日安排尚未公布。");
+  if (raw.papers.length > 32 || raw.days.length > 400)
+    throw new Error("节假日数据条目过多。");
+  const papers = raw.papers.map((value) => {
+    const url = httpsUrl(value);
+    if (!url || !(url.hostname === "gov.cn" || url.hostname.endsWith(".gov.cn")))
+      throw new Error("节假日数据缺少有效的官方公告来源。");
+    return value as string;
+  });
+  const seen = new Set<string>();
+  const days = raw.days.map((day) => {
+    if (!isObject(day) || !validDate(day.date, expectedYear) ||
+      typeof day.name !== "string" || !day.name.trim() || day.name.length > 160 ||
+      /[\u0000-\u001f\u007f]/.test(day.name) || typeof day.isOffDay !== "boolean")
+      throw new Error("节假日日期、名称或休息标记不正确。");
+    if (seen.has(day.date)) throw new Error("节假日数据包含重复日期。");
+    seen.add(day.date);
+    return { date: day.date, name: day.name.trim(), isOffDay: day.isOffDay };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  return { year: expectedYear, papers: [...new Set(papers)], days, fetchedAt, source };
+}
 
-// 国务院办公厅通知，2026-11-05；MOHRSS全文转载2026-11-09。
-addVacation("元旦", "2027-01-01", "2027-01-03");
-addVacation("春节", "2027-02-05", "2027-02-13");
-addMakeup("春节", ["2027-01-31", "2027-02-14"]);
-addVacation("清明节", "2027-04-03", "2027-04-05");
-addVacation("劳动节", "2027-05-01", "2027-05-05");
-addMakeup("劳动节", ["2027-05-08"]);
-addVacation("端午节", "2027-06-09", "2027-06-09");
-addVacation("中秋节", "2027-09-15", "2027-09-15");
-addVacation("国庆节", "2027-10-01", "2027-10-07");
-addMakeup("国庆节", ["2027-09-26", "2027-10-09"]);
+/** Atomically replace runtime data; failed validation leaves the old data intact. */
+export function installHolidayData(years: readonly HolidayYearData[]): void {
+  if (!Array.isArray(years) || years.length > 400)
+    throw new Error("节假日年度缓存不正确。");
+  const seen = new Set<number>();
+  const validated = years.map((year) => {
+    if (!isObject(year) || seen.has(year.year as number))
+      throw new Error("节假日年度缓存重复或无效。");
+    const value = parseHolidayYear(year, year.year as number, year.fetchedAt as number, year.source as string);
+    seen.add(value.year);
+    return value;
+  }).sort((a, b) => a.year - b.year);
+  const next = new Map<string, Readonly<PublicHoliday>>();
+  for (const year of validated) {
+    for (const day of year.days) {
+      // A newer annual notice may alter the previous December's schedule.
+      const name = day.isOffDay || day.name.includes("补班") ? day.name : `${day.name}补班`;
+      next.set(day.date, Object.freeze({ kind: day.isOffDay ? "rest" : "work", name }));
+    }
+  }
+  calendar = next;
+  availableYears = validated.map((year) => year.year);
+}
 
-/** A listed official exception, or null for ordinary dates/unlisted years. */
+/** Only downloaded, validated years count as holiday coverage. */
+export function getHolidayYears(): number[] {
+  return [...availableYears];
+}
+
+/** A published exception, or null for ordinary dates or missing data. */
 export function getPublicHoliday(dateKey: string): PublicHoliday | null {
   const day = calendar.get(dateKey);
   return day ? { ...day } : null;

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-1f9d75?style=flat-square" alt="版本 1.4.0" />
+  <img src="https://img.shields.io/badge/version-1.4.1-1f9d75?style=flat-square" alt="版本 1.4.1" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -37,7 +37,7 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 | 秒级工资时钟   | 手动开始、暂停和继续工作，实时查看计薪时长、收入与进度；到下班时间自动停止   |
 | 灵活排班       | 支持双休、单休、大小周，可按星期分别设置上下班时间                           |
 | 午休与晚饭     | 两段休息均可修改或关闭；只扣除工作时段内的交集，重叠部分不会重复扣除         |
-| 公共假期与调休 | 内置中国大陆 2026、2027 年官方放假及补班安排，支持在日历中手动覆盖           |
+| 公共假期与调休 | 自动获取中国大陆放假及调休补班安排，本地缓存离线可用，支持手动覆盖           |
 | 月度计薪周期   | 支持每月 1–31 日起算，例如 26 日至次月 25 日，按周期汇总工作日和收入         |
 | 发薪日管理     | 可设为周期结束当月、次月或隔月；遇非工作日，选择提前或顺延至最近的工作日     |
 | 周期记录       | 浏览前后各期的工作记录、计划发薪日和调整后日期，首页显示下次发薪倒计时       |
@@ -162,9 +162,13 @@ Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今
 
 工作日判断优先级为：**手动排班 > 已启用的官方放假、补班安排 > 双休 / 单休 / 大小周**。官方假期不计为工作日，调休补班计入，同一天不会重复统计。
 
-当前内置中国大陆 **2026、2027 年**数据，离线可用，**不会自动联网更新**。未收录年份会提示，暂按工作制与手动排班计算；其他地区的公共假期也可手动调整。月历按自然月显示。
+从 **1.4.1** 起，节假日安排通过网络自动拉取，不再随安装包内置具体年份。当前支持中国大陆；启动后自动检查本年、前一年、下一年及近期年份的缓存，查看其他年份时按需获取，已有数据每日检查更新。检查与下载跟随系统代理（含 PAC）。
 
-数据依据国务院办公厅公布的 [2026 年放假调休通知](https://www.beijing.gov.cn/zhengce/zhengcefagui/202511/t20251104_4258873.html)与 [2027 年放假调休通知](https://chinajob.mohrss.gov.cn/h5/c/2026-11-09/635850.shtml)整理。
+打开「偏好设置 → 排除公共假期」可查看已缓存年份、更新时间，并手动刷新。成功获取的数据保存在本地，断网或更新失败时继续使用已有缓存；尚未公布或未成功获取的年份会提示，暂按工作制与手动排班估算。刷新不会覆盖手动排班，也不会重算已经开始记录的工资单价。月历按自然月显示。
+
+数据来自 [NateScarlet/holiday-cn](https://github.com/NateScarlet/holiday-cn)（MIT），该项目根据国务院通知整理中国放假、补班安排。应用使用 GitHub Raw 与 jsDelivr 镜像获取年度数据，并校验年份、日期和官方文件来源；不会将未公布的年度占位数据当作完整日历。
+
+<p align="center"><img src="docs/holiday-sync.png" width="320" alt="节假日数据设置：缓存年份、最近检查与手动刷新，截图使用演示数据" /></p>
 
 <a id="development"></a>
 
@@ -188,6 +192,7 @@ npm run dev
 | `npm run build`        | 构建界面与 Electron 主进程               |
 | `npm run test:desktop` | 使用隔离数据运行真实桌面流程检查         |
 | `npm run test:floating` | 在 Windows 检查悬浮窗同步、隐私和位置持久化 |
+| `npm run test:holidays` | 检查在线节假日、代理、离线缓存及桌面日历同步 |
 | `npm start`            | 启动已构建的桌面应用                     |
 
 项目使用 **Electron + React + TypeScript + Vite**。核心测试覆盖短月与闰年、大小周、休息时段、跨月周期、长假调整、历史记录迁移及夏令时日期计算。
@@ -235,6 +240,7 @@ Linux 托盘可用性取决于桌面环境，部分 GNOME 环境需要 AppIndica
 - `state.json`：当前设置与计时记录。
 - `state.backup.json`：上一份有效数据。
 - `floating.json`：悬浮窗显示、展开、位置与金额隐私偏好。
+- `holiday-cache.json`：自动拉取的中国节假日数据、来源及获取时间。
 
 实际位置由 Electron 与运行方式决定。备份或迁移前先退出应用，再复制整个用户数据目录。测试可用 `TOUCHFISH_USER_DATA` 指定独立目录；使用 `--hidden` 启动可直接常驻托盘。
 

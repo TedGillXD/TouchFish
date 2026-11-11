@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { normalizeData, type AppData } from "../src/core";
 import { createUpdaterController } from "./updater";
 import { createFloatingController } from "./floating-window";
+import { createHolidayService } from "./holiday-service";
 
 const WIDTH = 440;
 const HEIGHT = 680;
@@ -40,6 +41,17 @@ let lastWriteError: Error | null = null;
 let liveData: AppData | null = null;
 let updater: ReturnType<typeof createUpdaterController> | null = null;
 let floating: Awaited<ReturnType<typeof createFloatingController>> | null = null;
+let holidays: Awaited<ReturnType<typeof createHolidayService>> | null = null;
+
+function holidayController() {
+  if (!holidays) throw new Error("节假日服务尚未就绪。");
+  return holidays;
+}
+
+function assertReadable(event: IpcMainInvokeEvent): void {
+  if (!trustedSender(event) && !floating?.isSender(event))
+    throw new Error("无法识别的应用请求。");
+}
 
 function updateController() {
   if (!updater) throw new Error("更新服务尚未就绪。");
@@ -289,6 +301,7 @@ async function requestQuit(): Promise<void> {
   if (quitPending) return;
   quitPending = true;
   await writeQueue;
+  await holidays?.flush().catch(() => {});
   try {
     await floating?.flush();
   } catch {
@@ -305,6 +318,19 @@ async function requestQuit(): Promise<void> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle("holidays:get", (event) => {
+    assertReadable(event);
+    return holidayController().getState();
+  });
+  ipcMain.handle("holidays:refresh", (event, years: unknown, force: unknown) => {
+    assertReadable(event);
+    if (years !== undefined && (!Array.isArray(years) || years.length > 8 ||
+      years.some((year) => !Number.isInteger(year) || year < 1900 || year > 2299)))
+      throw new Error("请求的节假日年份无效。");
+    if (force !== undefined && typeof force !== "boolean")
+      throw new Error("节假日刷新设置无效。");
+    return holidayController().refresh(years as number[] | undefined, force as boolean | undefined);
+  });
   ipcMain.handle("updater:get", (event) => {
     assertTrusted(event);
     return updateController().getState();
@@ -523,6 +549,7 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    holidays?.dispose();
     floating?.dispose();
     updater?.dispose();
     tray?.destroy();
@@ -532,6 +559,19 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (process.platform === "darwin") app.dock?.hide();
+      holidays = await createHolidayService({
+        onState: (state) => {
+          for (const window of [win, floating?.getWindow()]) {
+            if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+              try {
+                window.webContents.send("holidays:state", state);
+              } catch {
+                // A renderer reload obtains the current snapshot on startup.
+              }
+            }
+          }
+        },
+      });
       floating = await createFloatingController({
         root,
         preload: join(__dirname, "preload.cjs"),
@@ -551,6 +591,7 @@ if (!app.requestSingleInstanceLock()) {
         },
         beforeInstall: async () => {
           await writeQueue;
+          await holidays?.flush().catch(() => {});
           await floating?.flush();
           if (lastWriteError)
             throw new Error("工作记录尚未保存，请先重试保存，再安装更新。");
@@ -572,6 +613,7 @@ if (!app.requestSingleInstanceLock()) {
           `完整面板仍可使用，请从偏好设置重试。${error instanceof Error ? error.message : ""}`,
         );
       }
+      holidays.start();
     })
     .catch((error: Error) => {
       dialog.showErrorBox("摸鱼时钟启动失败", error.message);

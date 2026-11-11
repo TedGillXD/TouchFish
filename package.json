@@ -1,7 +1,7 @@
 {
   "name": "touchfish-clock",
   "productName": "摸鱼时钟",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "A quiet desktop companion for your working day.",
   "author": "TouchFish",
@@ -20,6 +20,7 @@
     "dist:linux": "npm run build && electron-builder --linux",
     "test:desktop": "npm run build && node scripts/smoke.mjs && node scripts/payroll-smoke.mjs",
     "test:floating": "npm run build && node scripts/floating-smoke.mjs",
+    "test:holidays": "npm run build && node scripts/holiday-service-smoke.mjs && node scripts/holiday-ui-smoke.mjs",
     "test:update-proxy": "node scripts/update-proxy-smoke.mjs"
   },
   "dependencies": {

@@ -1,3 +1,4 @@
+import { seedHolidayCache } from "./test-holiday-cache.mjs";
 import { _electron as electron, expect } from "@playwright/test";
 import electronPath from "electron";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
@@ -5,10 +6,12 @@ import { resolve } from "node:path";
 
 await mkdir(".cache", { recursive: true });
 const userData = await mkdtemp(resolve(".cache/payroll-smoke-"));
+await seedHolidayCache(userData);
 const env = {
   ...process.env,
   TOUCHFISH_USER_DATA: userData,
   TOUCHFISH_KEEP_OPEN: "1",
+  TOUCHFISH_HOLIDAYS_AUTO_REFRESH: "0",
 };
 delete env.ELECTRON_RUN_AS_NODE;
 let app;

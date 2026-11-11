@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AppData } from "../src/core";
 import type { UpdateState } from "../src/update-types";
 import type { FloatingState } from "../src/floating-types";
+import type { HolidayState } from "../src/holiday-types";
 
 // Expose individual operations; never expose ipcRenderer or Node to the page.
 contextBridge.exposeInMainWorld("touchFish", {
@@ -21,6 +22,16 @@ contextBridge.exposeInMainWorld("touchFish", {
     ipcRenderer.invoke("login:set", enabled),
   updateStatus: (message: string): void =>
     ipcRenderer.send("tray:status", message),
+  holidays: {
+    getState: (): Promise<HolidayState> => ipcRenderer.invoke("holidays:get"),
+    refresh: (years?: number[], force?: boolean): Promise<HolidayState> =>
+      ipcRenderer.invoke("holidays:refresh", years, force),
+    onState: (callback: (state: HolidayState) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: HolidayState) => callback(state);
+      ipcRenderer.on("holidays:state", listener);
+      return () => ipcRenderer.removeListener("holidays:state", listener);
+    },
+  },
   floating: {
     getState: (): Promise<FloatingState> => ipcRenderer.invoke("floating:get"),
     setEnabled: (enabled: boolean): Promise<FloatingState> => ipcRenderer.invoke("floating:enabled", enabled),

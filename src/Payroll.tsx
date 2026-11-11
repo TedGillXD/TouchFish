@@ -18,6 +18,7 @@ import {
   type PayrollPeriod,
   type Settings,
 } from "./core";
+import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 
 export const shortDate = (key: string) =>
   `${Number(key.slice(5, 7))}月${Number(key.slice(8))}日`;
@@ -42,8 +43,11 @@ export function PayrollSettings({
   settings: Settings;
   onChange: (payroll: Settings["payroll"]) => void;
 }) {
+  useHolidayState();
   const payroll = settings.payroll;
   const preview = getPayrollPeriod(dateKey(), settings);
+  useHolidayYears(yearsForDates(preview.start, preview.end, preview.nominalPayday,
+    preview.actualPayday), settings.publicHolidays);
   const patch = (change: Partial<Settings["payroll"]>) =>
     onChange({ ...payroll, ...change });
   const days = Array.from({ length: 31 }, (_, index) => index + 1);
@@ -144,7 +148,7 @@ export function PayrollSettings({
       )}
       {!preview.holidayCoverageComplete && (
         <p className="payroll-warning">
-          部分日期的官方节假日安排尚未收录，发薪日暂按已有排班估算。
+          部分日期的节假日尚未获取或未公布，发薪日暂按已有排班估算。
         </p>
       )}
     </section>
@@ -168,12 +172,15 @@ export function PayrollPanel({
   onSettings: () => void;
   onCalendar: () => void;
 }) {
+  const holidayState = useHolidayState();
   const today = dateKey(now);
   const [cursor, setCursor] = useState(initialDate || today);
   const period = useMemo(
     () => getPayrollPeriod(cursor, data.settings),
-    [cursor, data.settings],
+    [cursor, data.settings, holidayState.years],
   );
+  useHolidayYears(yearsForDates(period.start, period.end, period.nominalPayday,
+    period.actualPayday), data.settings.publicHolidays);
   const current = getPayrollPeriod(today, data.settings);
   const keys = Object.keys(data.records)
     .filter((key) => key >= period.start && key <= period.end)

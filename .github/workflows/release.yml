@@ -98,6 +98,12 @@ jobs:
         if: matrix.platform == 'win32'
         timeout-minutes: 5
         run: node scripts/floating-smoke.mjs
+      - name: Verify online China holiday service and desktop calendar
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/holiday-service-smoke.mjs
+          node scripts/holiday-ui-smoke.mjs
       - name: Package native installers and update metadata
         run: npx electron-builder ${{ matrix.target }} --publish never
         env:
@@ -165,9 +171,9 @@ jobs:
           cat > release-notes.md <<'NOTES'
           ## 更新内容
 
-          - 新增 Windows 桌面悬浮窗：紧凑显示今日工作进度，展开查看税前收入、计薪时长与工作状态。
-          - 支持拖动、记住位置、置顶显示与多显示器位置恢复；在设置或托盘菜单中随时开关。
-          - 金额隐藏状态在主面板和悬浮窗间同步；悬浮窗只读现有计时记录，午休、晚饭与暂停沿用同一计薪规则。
+          - 中国大陆节假日改为自动联网拉取，不再在应用中内置具体年份。
+          - 启动和浏览日历时按需更新，支持系统代理、本地缓存及手动刷新；获取失败时保留已有有效数据。
+          - 日历、工作日统计、发薪日调整及悬浮窗使用同一份节假日数据；手动排班和已经开始的计薪快照保留。
           - 保留三平台安装包与跟随系统代理的应用内更新，升级继续使用本地设置和工作记录。
 
           ## 安装包
