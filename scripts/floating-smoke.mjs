@@ -29,6 +29,23 @@ const readPreferences = async () =>
 const readData = async () =>
   JSON.parse(await readFile(resolve(userData, "state.json"), "utf8"));
 
+// ElectronApplication.evaluate has no Playwright timeout. Bound native steps in
+// the host process so a blocked Win32 operation cannot hide the failing action.
+async function step(label, operation, timeout = 20000) {
+  console.log(`  ${label}...`);
+  let timer;
+  try {
+    const value = await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Timed out after ${timeout}ms: ${label}`)), timeout); }),
+    ]);
+    console.log(`  ${label}: OK`);
+    return value;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function launch() {
   app = await electron.launch({
     executablePath: process.env.TOUCHFISH_EXECUTABLE || electronPath,
@@ -115,9 +132,15 @@ try {
 
   console.log("Checking live read-only wage mirroring and meal boundaries...");
   await main.getByRole("button", { name: "设置", exact: true }).click();
-  await main.getByRole("spinbutton", { name: "税前月薪" }).fill("22000");
-  await main.getByLabel("周二下班时间").fill("21:00");
+  const initialSalary = main.getByRole("spinbutton", { name: "税前月薪" });
+  const tuesdayEnd = main.getByLabel("周二下班时间");
+  await initialSalary.fill("22000");
+  await expect(initialSalary).toHaveValue("22000");
+  await tuesdayEnd.fill("21:00");
+  await expect(tuesdayEnd).toHaveValue("21:00");
+  await expect(initialSalary).toHaveValue("22000");
   await main.getByRole("button", { name: "保存设置" }).click();
+  await expect(main.getByRole("heading", { name: "偏好设置", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await readData()).settings.monthlySalary).toBe(22000);
   await main.getByRole("button", { name: /开始工作/ }).click();
   await expect(floating.locator(".floating-status")).toHaveText("计时中");
@@ -211,34 +234,77 @@ try {
   })).toEqual({ save: true, update: true });
 
   console.log("Checking native position persistence, resizing and close/reopen...");
-  const expectedPosition = await app.evaluate(({ BrowserWindow, screen }) => {
+  const expectedPosition = await step("Move native window", () => app.evaluate(({ BrowserWindow, screen }) => {
     const win = BrowserWindow.getAllWindows().find((candidate) =>
       candidate.webContents.getURL().includes("window=floating"));
     const area = screen.getDisplayMatching(win.getBounds()).workArea;
     const position = { x: area.x + 80, y: area.y + 80 };
     win.setPosition(position.x, position.y);
     return position;
+  }));
+  await step("Persist native position", () => expect.poll(async () => (await readPreferences()).position).toEqual(expectedPosition));
+  await step("Install synchronous native move regression", () => app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().includes("window=floating"));
+    const original = win.setBounds;
+    const probe = { calls: 0, restore: () => { win.setBounds = original; } };
+    globalThis.floatingBoundsProbe = probe;
+    win.setBounds = function (bounds, ...args) {
+      if (++probe.calls > 4) throw new Error("Recursive native setBounds");
+      // Model a native DPI rounding adjustment plus a synchronous moved event.
+      // Production must accept the actual rectangle without treating it as a
+      // fresh user drag or calling setBounds recursively.
+      const result = original.call(this, { ...bounds, x: bounds.x + 1 }, ...args);
+      this.emit("moved");
+      return result;
+    };
+  }));
+  await step("Collapse with synchronous native move", () => floating.getByRole("button", { name: "收起悬浮窗" }).click());
+  await step("Check native move did not recurse", async () => {
+    const calls = await app.evaluate(() => {
+      const probe = globalThis.floatingBoundsProbe;
+      probe.restore();
+      return probe.calls;
+    });
+    expect(calls).toBe(1);
   });
-  await expect.poll(async () => (await readPreferences()).position).toEqual(expectedPosition);
-  await floating.getByRole("button", { name: "收起悬浮窗" }).click();
-  await assertSize(164, 44);
-  expect((await windowInfo()).bounds).toMatchObject(expectedPosition);
-  await floating.screenshot({ path: ".cache/floating-compact.png", scale: "css" });
-  await floating.getByRole("button", { name: "展开悬浮窗" }).click();
-  await assertSize(264, 148);
-  expect((await windowInfo()).bounds).toMatchObject(expectedPosition);
-  await app.evaluate(({ BrowserWindow }) => {
+  await step("Restore exact drag anchor", () => app.evaluate(({ BrowserWindow }, position) => {
+    BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().includes("window=floating")).setPosition(position.x, position.y);
+  }, expectedPosition));
+  await step("Persist restored drag anchor", () => expect.poll(async () => (await readPreferences()).position).toEqual(expectedPosition));
+  await step("Check compact bounds", () => assertSize(164, 44));
+  await step("Check compact anchor", async () => expect((await windowInfo()).bounds).toMatchObject(expectedPosition));
+  await step("Install identical-bounds native probe", () => app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().includes("window=floating"));
+    const original = win.setBounds;
+    const probe = { calls: 0, restore: () => { win.setBounds = original; } };
+    globalThis.floatingBoundsProbe = probe;
+    win.setBounds = function (...args) { probe.calls++; return original.apply(this, args); };
+  }));
+  await step("Reapply unchanged floating preferences", () => main.evaluate(() => window.touchFish.floating.setEnabled(true)));
+  await step("Check identical bounds skip native resize", async () => {
+    const calls = await app.evaluate(() => {
+      const probe = globalThis.floatingBoundsProbe;
+      probe.restore();
+      return probe.calls;
+    });
+    expect(calls).toBe(0);
+  });
+  await step("Capture compact window", () => floating.screenshot({ path: ".cache/floating-compact.png", scale: "css", timeout: 15000 }));
+  await step("Expand native window", () => floating.getByRole("button", { name: "展开悬浮窗" }).click());
+  await step("Check expanded bounds", () => assertSize(264, 148));
+  await step("Check expanded anchor", async () => expect((await windowInfo()).bounds).toMatchObject(expectedPosition));
+  await step("Close native floating window", () => app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows().find((candidate) =>
       candidate.webContents.getURL().includes("window=floating")).close();
-  });
-  await expect.poll(async () => (await windowInfo()).visible).toBe(false);
-  await expect.poll(async () => (await readPreferences()).enabled).toBe(false);
-  await main.evaluate(() => window.touchFish.floating.setEnabled(true));
-  await expect.poll(async () => (await windowInfo()).visible).toBe(true);
+  }));
+  await step("Check closed window is hidden", () => expect.poll(async () => (await windowInfo()).visible).toBe(false));
+  await step("Check disabled preference", () => expect.poll(async () => (await readPreferences()).enabled).toBe(false));
+  await step("Reopen native floating window", () => main.evaluate(() => window.touchFish.floating.setEnabled(true)));
+  await step("Check reopened window", () => expect.poll(async () => (await windowInfo()).visible).toBe(true));
 
-  await jumpTo("2026-11-10T21:00:01");
-  await expect(floating.locator(".floating-status")).toHaveText("已下班");
-  await expect.poll(async () => (await readData()).records["2026-11-10"].completed).toBe(true);
+  await step("Advance clock to end of day", () => jumpTo("2026-11-10T21:00:01"));
+  await step("Check end-of-day status", () => expect(floating.locator(".floating-status")).toHaveText("已下班"));
+  await step("Check completed-day record", () => expect.poll(async () => (await readData()).records["2026-11-10"].completed).toBe(true));
   console.log("Checking the next day, scheduled start and lunch...");
   await jumpTo("2026-11-11T08:30:00");
   await expect(floating.locator(".floating-status")).toHaveText("未开始");
@@ -281,7 +347,31 @@ try {
   await quitNormally();
   console.log("PASS: floating wages/meal/pause/end synchronization, disk-failure live state and recovery, privacy persistence, read-only IPC, independent preferences and unsaved drafts, hide/reopen, native position persistence, expansion bounds and offscreen recovery.");
   console.log(`Isolated data: ${userData}`);
+} catch (error) {
+  // Report the original error before cleanup, which may itself encounter an
+  // unresponsive Electron main process.
+  console.error(error);
+  if (main && !main.isClosed()) {
+    await step("Capture failure UI state", async () => {
+      console.error("Failure UI:", await main.evaluate(() => ({
+        salary: document.querySelector('[aria-label="税前月薪"]')?.value,
+        tuesdayEnd: document.querySelector('[aria-label="周二下班时间"]')?.value,
+        settingsOpen: [...document.querySelectorAll("h1")].some(heading => heading.textContent === "偏好设置"),
+        errors: [...document.querySelectorAll(".error-banner,.validation-errors,.field-error")].map(element => element.textContent),
+      })));
+    }, 2000).catch(error => console.error(`Failure UI unavailable: ${error.message}`));
+  }
+  throw error;
 } finally {
-  await app?.evaluate(({ app }) => app.exit(0)).catch(() => {});
-  await app?.close().catch(() => {});
+  if (app) {
+    const child = app.process();
+    await step("Exit isolated Electron process", () => app.evaluate(({ app }) => app.exit(0)), 5000).catch(error => {
+      if (!/closed/i.test(error.message)) console.error(`Cleanup: ${error.message}`);
+      if (child.exitCode === null) child.kill("SIGKILL");
+    });
+    await step("Close isolated Electron connection", () => app.close(), 5000).catch(error => {
+      console.error(`Cleanup: ${error.message}`);
+      if (child.exitCode === null) child.kill("SIGKILL");
+    });
+  }
 }

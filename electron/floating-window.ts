@@ -68,6 +68,7 @@ export async function createFloatingController(options: FloatingOptions) {
   let lastWriteError: Error | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let expectedBounds: Rectangle | undefined;
+  let applyingBounds = false;
   let movePending = false;
   let quitting = false;
   let disposed = false;
@@ -130,12 +131,25 @@ export async function createFloatingController(options: FloatingOptions) {
   }
 
   function applyBounds(): void {
-    if (!window || window.isDestroyed()) return;
+    if (!window || window.isDestroyed() || applyingBounds) return;
     // A deliberate resize/recovery keeps the remembered compact anchor. A
     // previously scheduled move callback must not adopt its clamped position.
     movePending = false;
-    expectedBounds = bounds();
-    window.setBounds(expectedBounds, false);
+    const target = bounds();
+    const current = window.getBounds();
+    expectedBounds = current;
+    if (["x", "y", "width", "height"].every(
+      (key) => current[key as keyof Rectangle] === target[key as keyof Rectangle],
+    )) return;
+    // Windows may emit move/moved synchronously from setBounds and round the
+    // requested DIP coordinates. Do not treat those events as another drag.
+    applyingBounds = true;
+    try {
+      window.setBounds(target, false);
+      if (!window.isDestroyed()) expectedBounds = window.getBounds();
+    } finally {
+      applyingBounds = false;
+    }
   }
 
   function settleMove(): void {
@@ -151,7 +165,7 @@ export async function createFloatingController(options: FloatingOptions) {
   }
 
   function rememberMove(final = false): void {
-    if (!window || window.isDestroyed() || quitting || disposed) return;
+    if (!window || window.isDestroyed() || applyingBounds || quitting || disposed) return;
     const current = window.getBounds();
     if (expectedBounds && ["x", "y"].every(
       (key) => current[key as keyof Rectangle] === expectedBounds![key as keyof Rectangle],

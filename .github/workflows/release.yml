@@ -98,6 +98,8 @@ jobs:
         if: matrix.platform == 'win32'
         timeout-minutes: 5
         run: node scripts/floating-smoke.mjs
+        env:
+          DEBUG: pw:api
       - name: Verify online China holiday service and desktop calendar
         if: matrix.platform == 'win32'
         timeout-minutes: 5
