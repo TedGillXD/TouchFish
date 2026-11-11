@@ -50,7 +50,7 @@ import {
   type AppData,
   type Settings,
 } from "./core";
-import { getPublicHoliday, getHolidayYears } from "./holidays";
+import { getPublicHoliday, getHolidayYears, getNextPublicHoliday } from "./holidays";
 import HolidaySettings from "./HolidaySettings";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 import UpdatePanel from "./UpdatePanel";
@@ -89,6 +89,7 @@ function App() {
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState<View>("home");
   const [payrollFocus, setPayrollFocus] = useState<string | undefined>();
+  const [calendarFocus, setCalendarFocus] = useState<string | undefined>();
   const [hidden, setHidden] = useState(!!window.touchFish);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -177,6 +178,13 @@ function App() {
     () => (data ? getNextPayday(todayKey, data.settings) : null),
     [data?.settings, todayKey, holidayState.years],
   );
+  const nextHoliday = useMemo(
+    () => getNextPublicHoliday(todayKey),
+    [todayKey, holidayState.years],
+  );
+  // Public-holiday reminders remain useful even when payroll exclusion is off.
+  const todayYear = Number(todayKey.slice(0, 4));
+  useHolidayYears([todayYear, todayYear + 1]);
   useHolidayYears(
     yearsForDates(todayKey, currentPeriod?.start, currentPeriod?.end,
       currentPeriod?.nominalPayday, nextPayday?.nominalPayday, nextPayday?.actualPayday),
@@ -291,6 +299,10 @@ function App() {
     setPayrollFocus(focus);
     setView("payroll");
   };
+  const openCalendar = (focus?: string) => {
+    setCalendarFocus(focus);
+    setView("calendar");
+  };
 
   return (
     <div className="app-shell">
@@ -311,7 +323,7 @@ function App() {
           <button
             className={`icon-button ${view === "calendar" ? "selected" : ""}`}
             title="工作日历"
-            onClick={() => setView(view === "calendar" ? "home" : "calendar")}
+            onClick={() => view === "calendar" ? setView("home") : openCalendar()}
           >
             <CalendarDays size={17} />
           </button>
@@ -360,7 +372,7 @@ function App() {
       )}
 
       <main
-        className={`main-content ${view !== "home" ? "secondary-content" : ""}`}
+        className={`main-content ${view === "home" ? "home-content" : "secondary-content"}`}
       >
         {view === "home" && (
           <>
@@ -504,7 +516,7 @@ function App() {
                 ) : summary.status === "rest" ? (
                   <button
                     className="primary rest-button"
-                    onClick={() => setView("calendar")}
+                    onClick={() => openCalendar()}
                   >
                     <CalendarDays size={17} />
                     查看工作日历
@@ -591,21 +603,51 @@ function App() {
                 </button>
               </div>
             </section>
-            <button
-              className="salary-note payday-shortcut"
-              title={
-                nextPayday
-                  ? `对应计薪周期：${periodRange(nextPayday)}`
-                  : "查看发薪安排"
-              }
-              onClick={() => openPayroll(nextPayday?.start)}
-            >
-              <Wallet size={13} />
-              {nextPayday
-                ? `下次发薪 ${shortDate(nextPayday.actualPayday!)} · ${nextPayday.daysUntil === 0 ? "就是今天" : `还有 ${nextPayday.daysUntil} 天`}`
-                : "查看发薪安排"}
-              <ChevronRight size={12} />
-            </button>
+            <section className="countdown-row" aria-label="假期与发薪倒计时">
+              <button
+                className={`countdown-card holiday-countdown ${nextHoliday?.ongoing ? "is-today" : ""} ${!nextHoliday ? "is-pending" : ""}`}
+                title={nextHoliday
+                  ? `${nextHoliday.name} · ${nextHoliday.date}${nextHoliday.coverageComplete ? " · 查看工作日历" : " · 部分年份数据待更新，当前显示已知假期"}`
+                  : "节假日数据尚未获取或下一年安排未公布，前往设置更新"}
+                onClick={() => nextHoliday ? openCalendar(nextHoliday.date) : setView("settings")}
+              >
+                <span className="countdown-title">
+                  <Sun size={12} />
+                  {nextHoliday && !nextHoliday.coverageComplete ? "已知公众假期" : "下个公众假期"}
+                  <ChevronRight size={12} />
+                </span>
+                <span className="countdown-content">
+                  <span className="countdown-detail">
+                    <span>{nextHoliday?.name ?? "等待假期安排"}</span>
+                    <small>{nextHoliday ? shortDate(nextHoliday.date) : "点击更新数据"}</small>
+                  </span>
+                  <strong className="countdown-number">
+                    {!nextHoliday ? "待更新" : nextHoliday.ongoing ? "假期中" : <>{nextHoliday.daysUntil}<small>天</small></>}
+                  </strong>
+                </span>
+              </button>
+              <button
+                className={`countdown-card payday-shortcut ${nextPayday?.daysUntil === 0 ? "is-today" : ""} ${!nextPayday ? "is-pending" : ""}`}
+                title={nextPayday
+                  ? `下次发薪 ${nextPayday.actualPayday} · 对应计薪周期：${periodRange(nextPayday)}${nextPayday.holidayCoverageComplete ? "" : " · 节假日数据未完整获取，日期暂为估算"}`
+                  : "暂无可用发薪日期，查看发薪安排"}
+                onClick={() => openPayroll(nextPayday?.start)}
+              >
+                <span className="countdown-title">
+                  <Wallet size={12} />下次发薪
+                  <ChevronRight size={12} />
+                </span>
+                <span className="countdown-content">
+                  <span className="countdown-detail">
+                    <span>{nextPayday ? shortDate(nextPayday.actualPayday!) : "检查发薪安排"}</span>
+                    <small>{nextPayday ? nextPayday.holidayCoverageComplete ? "按发薪规则调整" : "日期暂为估算" : "暂无可用日期"}</small>
+                  </span>
+                  <strong className="countdown-number">
+                    {!nextPayday ? "待设置" : nextPayday.daysUntil === 0 ? "今天发薪" : <>{nextPayday.daysUntil}<small>天</small></>}
+                  </strong>
+                </span>
+              </button>
+            </section>
           </>
         )}
 
@@ -626,6 +668,7 @@ function App() {
           <CalendarPanel
             settings={data.settings}
             now={now}
+            initialDate={calendarFocus}
             onBack={() => setView("home")}
             onChange={(settings) => {
               setData((current) =>
@@ -643,7 +686,7 @@ function App() {
             initialDate={payrollFocus}
             onBack={() => setView("home")}
             onSettings={() => setView("settings")}
-            onCalendar={() => setView("calendar")}
+            onCalendar={() => openCalendar()}
           />
         )}
         {view === "history" && (
@@ -1125,22 +1168,24 @@ function MealSettings({
 function CalendarPanel({
   settings,
   now,
+  initialDate,
   onBack,
   onChange,
 }: {
   settings: Settings;
   now: number;
+  initialDate?: string;
   onBack: () => void;
   onChange: (s: Settings) => void;
 }) {
-  const date = new Date(now);
+  const date = new Date(`${initialDate || dateKey(now)}T12:00:00`);
   const [cursor, setCursor] = useState([
     date.getFullYear(),
     date.getMonth() + 1,
   ]);
   const [year, month] = cursor;
   useHolidayYears([year, year + 1], settings.publicHolidays);
-  const [selected, setSelected] = useState(dateKey(now));
+  const [selected, setSelected] = useState(initialDate || dateKey(now));
   const days = monthDays(year, month, settings);
   const offset = (new Date(year, month - 1, 1).getDay() + 6) % 7;
   const shift = (n: number) => {

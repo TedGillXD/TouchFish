@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fixture from "../tests/fixtures/china-holidays.json";
 import {
   getHolidayYears,
+  getNextPublicHoliday,
   getPublicHoliday,
   installHolidayData,
   parseHolidayYear,
@@ -139,4 +140,80 @@ test("a calendar update refreshes future denominators and coverage without repri
   assert.deepEqual(normalizeData(JSON.parse(JSON.stringify(data))).records["2026-10-09"].plan, plan);
   installHolidayData([changed[0]]);
   assert.equal(getPayrollPeriod("2027-03-01", data.settings).holidayCoverageComplete, false);
+});
+
+test("holiday countdown skips ordinary weekends and makeup work, and treats today's vacation as ongoing", () => {
+  installHolidayData(fixture);
+  assert.deepEqual(getNextPublicHoliday("2026-09-24"), {
+    date: "2026-09-25", name: "中秋节", daysUntil: 1, ongoing: false, coverageComplete: true,
+  });
+  for (const date of ["2026-09-25", "2026-09-26", "2026-09-27"]) {
+    assert.deepEqual(getNextPublicHoliday(date), {
+      date, name: "中秋节", daysUntil: 0, ongoing: true, coverageComplete: true,
+    });
+  }
+  assert.deepEqual(getNextPublicHoliday("2026-09-28"), {
+    date: "2026-10-01", name: "国庆节", daysUntil: 3, ongoing: false, coverageComplete: true,
+  });
+  for (const date of ["2026-10-08", "2026-10-10", "2026-11-14"]) {
+    const next = getNextPublicHoliday(date)!;
+    assert.equal(next.date, "2027-01-01", "a makeup day or ordinary Saturday is not the next public holiday");
+    assert.equal(next.name, "元旦");
+    assert.equal(next.ongoing, false);
+    assert.equal(next.coverageComplete, true);
+  }
+});
+
+test("holiday countdown crosses the year in calendar days and updates with the downloaded snapshot", () => {
+  installHolidayData(fixture);
+  assert.deepEqual(getNextPublicHoliday("2026-12-31"), {
+    date: "2027-01-01", name: "元旦", daysUntil: 1, ongoing: false, coverageComplete: true,
+  });
+  const changed = structuredClone(fixture);
+  changed[1].days.push({ date: "2026-12-31", name: "元旦", isOffDay: true });
+  installHolidayData(changed);
+  assert.deepEqual(getNextPublicHoliday("2026-12-31"), {
+    date: "2026-12-31", name: "元旦", daysUntil: 0, ongoing: true, coverageComplete: true,
+  });
+  installHolidayData([]);
+  assert.equal(getNextPublicHoliday("2026-12-31"), null);
+});
+
+test("holiday countdown never claims complete coverage across a missing year or next December notice", () => {
+  const future = { ...structuredClone(fixture[1]), year: 2028,
+    source: "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/2028.json",
+    days: [{ date: "2028-01-01", name: "元旦", isOffDay: true }],
+  };
+  installHolidayData([fixture[0], future]);
+  assert.deepEqual(getNextPublicHoliday("2026-11-11"), {
+    date: "2028-01-01", name: "元旦", daysUntil: 416, ongoing: false, coverageComplete: false,
+  });
+  const december = structuredClone(fixture[0]);
+  december.days.push({ date: "2026-12-31", name: "测试跨年假期", isOffDay: true });
+  installHolidayData([december]);
+  assert.equal(getNextPublicHoliday("2026-12-01")!.coverageComplete, false);
+  assert.equal(getNextPublicHoliday("2026-12-31")!.coverageComplete, false);
+  installHolidayData([december, fixture[1]]);
+  assert.equal(getNextPublicHoliday("2026-12-01")!.coverageComplete, true);
+});
+
+test("holiday countdown rejects unknown dates and remains calendar based across daylight saving changes", () => {
+  for (const key of ["", "invalid", "2026-1-01", "2026-02-30", "1899-12-31", "2300-01-01"])
+    assert.equal(getNextPublicHoliday(key), null);
+  assert.equal(getNextPublicHoliday("2026-11-11"), null, "an empty cache does not invent a next holiday");
+  const special = structuredClone(fixture[0]);
+  special.days = [
+    { date: "2026-03-09", name: "测试春季假期", isOffDay: true },
+    { date: "2026-11-02", name: "测试秋季假期", isOffDay: true },
+  ];
+  installHolidayData([special]);
+  const previousTimezone = process.env.TZ;
+  try {
+    process.env.TZ = "America/New_York";
+    assert.equal(getNextPublicHoliday("2026-03-07")!.daysUntil, 2);
+    assert.equal(getNextPublicHoliday("2026-10-31")!.daysUntil, 2);
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
 });

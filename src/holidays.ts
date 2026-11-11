@@ -5,6 +5,14 @@ export interface PublicHoliday {
   name: string;
 }
 
+export interface PublicHolidayCountdown {
+  date: string;
+  name: string;
+  daysUntil: number;
+  ongoing: boolean;
+  coverageComplete: boolean;
+}
+
 // Runtime data comes only from the downloaded/cache snapshot installed by the
 // holiday service. A new installation has no assumed or bundled holiday dates.
 let calendar = new Map<string, Readonly<PublicHoliday>>();
@@ -105,4 +113,40 @@ export function getHolidayYears(): number[] {
 export function getPublicHoliday(dateKey: string): PublicHoliday | null {
   const day = calendar.get(dateKey);
   return day ? { ...day } : null;
+}
+
+/** Next announced public holiday, including an ongoing holiday today. */
+export function getNextPublicHoliday(dateKey: string): PublicHolidayCountdown | null {
+  if (typeof dateKey !== "string") return null;
+  const firstYear = Number(dateKey.slice(0, 4));
+  if (!validYear(firstYear) || !validDate(dateKey, firstYear)) return null;
+
+  let candidate: { date: string; name: string } | null = null;
+  for (const [date, day] of calendar) {
+    // Ordinary weekends and compensatory workdays are not public holidays.
+    // Returning today while a holiday is in progress avoids counting each
+    // subsequent day of the same vacation as a new upcoming holiday.
+    if (day.kind === "rest" && date >= dateKey && (!candidate || date < candidate.date))
+      candidate = { date, name: day.name };
+  }
+  if (!candidate) return null;
+
+  const available = new Set(availableYears);
+  const lastYear = Number(candidate.date.slice(0, 4));
+  let coverageComplete = true;
+  for (let year = firstYear; year <= lastYear; year++) {
+    // An unobserved intervening year may contain an earlier holiday; the next
+    // year's announcement can also change the preceding December's schedule.
+    if (!available.has(year) ||
+      (dateKey <= `${year}-12-31` && candidate.date >= `${year}-12-01` && !available.has(year + 1))) {
+      coverageComplete = false;
+      break;
+    }
+  }
+  return {
+    ...candidate,
+    daysUntil: (Date.parse(`${candidate.date}T00:00:00Z`) - Date.parse(`${dateKey}T00:00:00Z`)) / 86_400_000,
+    ongoing: candidate.date === dateKey,
+    coverageComplete,
+  };
 }

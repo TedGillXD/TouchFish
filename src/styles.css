@@ -562,6 +562,82 @@ svg {
 .salary-note:hover {
   color: #518d71;
 }
+.home-content .greeting { margin-bottom: 8px; }
+.home-content .earnings-card { padding-top: 13px; padding-bottom: 11px; }
+.home-content .earnings { margin: 9px 0 10px; font-size: 40px; }
+.home-content .earnings-details { margin-top: 9px; padding-top: 9px; }
+.home-content .work-section { margin-top: 11px; }
+.home-content .work-section .section-label { margin-bottom: 8px; }
+.home-content .schedule-line { margin-bottom: 9px; }
+.home-content .schedule-icon { height: 32px; width: 32px; }
+.home-content .work-hint { margin-top: 5px; }
+.home-content .month-section { margin-top: 10px; }
+.home-content .month-section .section-label { margin-bottom: 7px; }
+.home-content .stat-card { padding-top: 8px; padding-bottom: 8px; }
+.countdown-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 11px;
+  margin: 10px 0 2px;
+}
+.countdown-card {
+  --countdown-accent: #16865e;
+  --countdown-muted: #7c9a8b;
+  text-align: left;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #e0eee6;
+  border-radius: 12px;
+  background: #f1f8f4;
+}
+.countdown-card.holiday-countdown {
+  --countdown-accent: #aa6a20;
+  --countdown-muted: #ac9579;
+  border-color: #f2e6d6;
+  background: #fcf7ef;
+}
+.countdown-card:hover { box-shadow: inset 0 0 0 1px #16865e18; }
+.holiday-countdown:hover { box-shadow: inset 0 0 0 1px #aa6a201c; }
+.countdown-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--countdown-accent);
+}
+.countdown-title > svg:last-child { margin-left: auto; opacity: 0.5; }
+.countdown-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-height: 29px;
+  margin-top: 3px;
+}
+.countdown-detail { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.countdown-detail > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--countdown-accent);
+  font-size: 10px;
+  line-height: 12px;
+}
+.countdown-detail small { color: var(--countdown-muted); font-size: 8px; line-height: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.countdown-number {
+  flex-shrink: 0;
+  color: var(--countdown-accent);
+  font-size: 27px;
+  line-height: 29px;
+  font-weight: 650;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.countdown-number small { font-size: 10px; font-weight: 450; margin-left: 3px; letter-spacing: 0; }
+.countdown-card.is-today .countdown-number,
+.countdown-card.is-pending .countdown-number { font-size: 17px; letter-spacing: -0.4px; }
+.countdown-card.is-pending .countdown-detail > span { color: var(--countdown-muted); }
 .app-footer {
   height: 38px;
   min-height: 38px;
