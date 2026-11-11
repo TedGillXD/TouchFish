@@ -5,7 +5,10 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  protocol,
   screen,
+  session,
+  shell,
   Tray,
 } from "electron";
 import type { IpcMainEvent, IpcMainInvokeEvent, Rectangle } from "electron";
@@ -15,6 +18,14 @@ import { normalizeData, type AppData } from "../src/core";
 import { createUpdaterController } from "./updater";
 import { createFloatingController } from "./floating-window";
 import { createHolidayService } from "./holiday-service";
+import { createBilibiliService } from "./bilibili-service";
+import { createBilibiliWindow } from "./bilibili-window";
+import type { BiliMode, BiliPlayback, BiliPlayRequest } from "../src/bilibili-types";
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: "touchfish-media",
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+}]);
 
 const WIDTH = 440;
 const HEIGHT = 680;
@@ -42,6 +53,43 @@ let liveData: AppData | null = null;
 let updater: ReturnType<typeof createUpdaterController> | null = null;
 let floating: Awaited<ReturnType<typeof createFloatingController>> | null = null;
 let holidays: Awaited<ReturnType<typeof createHolidayService>> | null = null;
+let bilibili: Awaited<ReturnType<typeof createBilibiliService>> | null = null;
+let player: ReturnType<typeof createBilibiliWindow> | null = null;
+let playbackRequest = 0;
+
+function mediaController() {
+  if (!bilibili) throw new Error("B 站服务尚未就绪。");
+  return bilibili;
+}
+
+function assertMediaSender(event: IpcMainInvokeEvent): void {
+  if (!trustedSender(event) && !player?.isSender(event))
+    throw new Error("无法识别的播放器请求。");
+}
+
+function broadcastMedia(channel: string, value: unknown): void {
+  for (const window of [win, player?.getWindow()]) {
+    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+      try { window.webContents.send(channel, value); } catch { /* Reload obtains a fresh snapshot. */ }
+    }
+  }
+}
+
+async function playBilibili(input: unknown, activate = true): Promise<BiliPlayback> {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("播放参数无效。");
+  const request = input as BiliPlayRequest;
+  if (typeof request.bvid !== "string" || request.bvid.length > 512 ||
+    !["audio", "video"].includes(request.mode) ||
+    (request.cid !== undefined && (!Number.isSafeInteger(request.cid) || request.cid <= 0)) ||
+    (request.quality !== undefined && (!Number.isInteger(request.quality) || request.quality < 1 || request.quality > 200)))
+    throw new Error("播放参数无效，请检查 BV 号、分 P 和画质。");
+  const revision = ++playbackRequest;
+  const playback = await mediaController().resolvePlayback(request);
+  if (revision !== playbackRequest) throw new Error("已切换至另一个播放请求。");
+  await player!.open(playback, activate);
+  return playback;
+}
 
 function holidayController() {
   if (!holidays) throw new Error("节假日服务尚未就绪。");
@@ -302,6 +350,7 @@ async function requestQuit(): Promise<void> {
   quitPending = true;
   await writeQueue;
   await holidays?.flush().catch(() => {});
+  await bilibili?.flush().catch(() => {});
   try {
     await floating?.flush();
   } catch {
@@ -318,6 +367,48 @@ async function requestQuit(): Promise<void> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle("bilibili:auth", (event) => { assertMediaSender(event); return mediaController().getAuth(); });
+  ipcMain.handle("bilibili:qr", (event) => { assertTrusted(event); return mediaController().createQr(); });
+  ipcMain.handle("bilibili:cancel-login", (event) => { assertTrusted(event); mediaController().cancelLogin(); });
+  ipcMain.handle("bilibili:logout", async (event) => {
+    assertTrusted(event);
+    playbackRequest++;
+    player?.close();
+    return mediaController().logout();
+  });
+  ipcMain.handle("bilibili:video", (event, input: unknown) => {
+    assertMediaSender(event);
+    if (typeof input !== "string" || input.length > 512) throw new Error("请输入有效的 BV 号。");
+    return mediaController().getVideo(input);
+  });
+  ipcMain.handle("bilibili:play", (event, request: unknown) => { assertMediaSender(event); return playBilibili(request, trustedSender(event)); });
+  ipcMain.handle("bilibili:playback", (event) => { assertMediaSender(event); return player?.getPlayback() ?? null; });
+  ipcMain.handle("bilibili:player-state", (event) => { assertMediaSender(event); return player!.getState(); });
+  ipcMain.handle("bilibili:mode", (event, mode: BiliMode) => {
+    assertMediaSender(event);
+    const current = player?.getPlayback();
+    if (!current || !["audio", "video"].includes(mode)) throw new Error("请先打开一个视频。");
+    return playBilibili({ bvid: current.video.bvid, cid: current.cid, quality: current.quality, mode }, trustedSender(event));
+  });
+  ipcMain.handle("bilibili:danmaku", (event, cid: unknown) => {
+    assertMediaSender(event);
+    if (!Number.isSafeInteger(cid) || Number(cid) <= 0 || player?.getPlayback()?.cid !== cid)
+      throw new Error("弹幕请求无效。");
+    return mediaController().getDanmaku(cid as number);
+  });
+  ipcMain.handle("bilibili:open-page", (event) => {
+    assertMediaSender(event);
+    const bvid = player?.getPlayback()?.video.bvid;
+    if (!bvid || !/^BV[0-9A-Za-z]{10}$/.test(bvid)) throw new Error("请先选择一个视频。");
+    return shell.openExternal(`https://www.bilibili.com/video/${bvid}/`);
+  });
+  for (const [channel, operation] of [
+    ["bilibili:close", () => { playbackRequest++; player?.close(); }],
+    ["bilibili:minimize", () => player?.minimize()],
+    ["bilibili:show", () => player?.show()],
+  ] as const) ipcMain.on(channel, event => {
+    if (trustedSender(event) || player?.isSender(event)) operation();
+  });
   ipcMain.handle("holidays:get", (event) => {
     assertReadable(event);
     return holidayController().getState();
@@ -549,6 +640,8 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    bilibili?.dispose();
+    player?.dispose();
     holidays?.dispose();
     floating?.dispose();
     updater?.dispose();
@@ -559,6 +652,17 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (process.platform === "darwin") app.dock?.hide();
+      bilibili = await createBilibiliService({ onAuth: state => broadcastMedia("bilibili:auth-state", state) });
+      bilibili.registerMediaProtocol(session.defaultSession);
+      player = createBilibiliWindow({
+        root,
+        preload: join(__dirname, "preload.cjs"),
+        devServer,
+        onState: state => {
+          if (!state.open) playbackRequest++;
+          broadcastMedia("bilibili:player-state", state);
+        },
+      });
       holidays = await createHolidayService({
         onState: (state) => {
           for (const window of [win, floating?.getWindow()]) {
@@ -591,6 +695,7 @@ if (!app.requestSingleInstanceLock()) {
         },
         beforeInstall: async () => {
           await writeQueue;
+          await bilibili?.flush();
           await holidays?.flush().catch(() => {});
           await floating?.flush();
           if (lastWriteError)

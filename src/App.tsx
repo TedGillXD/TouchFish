@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  Tv,
   Utensils,
   Wallet,
 } from "lucide-react";
@@ -55,6 +56,7 @@ import HolidaySettings from "./HolidaySettings";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 import UpdatePanel from "./UpdatePanel";
 import FloatingSettings from "./FloatingSettings";
+import BilibiliPanel from "./BilibiliPanel";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -62,7 +64,7 @@ import {
   shortDate,
 } from "./Payroll";
 
-type View = "home" | "settings" | "calendar" | "history" | "payroll";
+type View = "home" | "settings" | "calendar" | "history" | "payroll" | "bilibili";
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 const money = (n: number) =>
   n.toLocaleString("zh-CN", {
@@ -320,6 +322,14 @@ function App() {
           </span>
         </button>
         <div className="header-actions">
+          <button
+            className={`icon-button ${view === "bilibili" ? "selected" : ""}`}
+            title="摸鱼 · B站音视频"
+            aria-label="摸鱼"
+            onClick={() => setView(view === "bilibili" ? "home" : "bilibili")}
+          >
+            <Tv size={18} />
+          </button>
           <button
             className={`icon-button ${view === "calendar" ? "selected" : ""}`}
             title="工作日历"
@@ -653,6 +663,7 @@ function App() {
           </>
         )}
 
+        {view === "bilibili" && <BilibiliPanel onBack={() => setView("home")} />}
         {view === "settings" && (
           <SettingsPanel
             settings={data.settings}

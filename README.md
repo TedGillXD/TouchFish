@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.1-1f9d75?style=flat-square" alt="版本 1.4.1" />
+  <img src="https://img.shields.io/badge/version-1.5.0-1f9d75?style=flat-square" alt="版本 1.5.0" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -21,12 +21,13 @@
   <a href="#preview">界面预览</a> ·
   <a href="#download">下载安装</a> ·
   <a href="#quick-start">快速开始</a> ·
+  <a href="#bilibili">B站小窗</a> ·
   <a href="#development">本地开发</a>
 </p>
 
 ---
 
-TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可查看今日工作进度、按秒累计的税前收入，以及下次发薪倒计时。界面采用圆角卡片设计，支持自定义工作制、休息时段、计薪周期和发薪安排；设置与工作记录保存在本机，无需登录。
+TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可查看今日工作进度、按秒累计的税前收入，以及下次发薪倒计时。界面采用圆角卡片设计，支持自定义工作制、休息时段、计薪周期和发薪安排，也可在独立小窗中听、看 B 站视频。工资时钟无需登录，设置与工作记录保存在本机。
 
 <a id="features"></a>
 
@@ -45,8 +46,10 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 | 应用更新       | 在设置中检查新版、下载更新包；检查与下载均使用系统代理配置，并校验文件完整性 |
 | 托盘与隐私     | 点击面板外部即可收起，后台继续记录；支持隐藏金额与本地数据备份               |
 | Windows 悬浮窗 | 置顶显示今日计薪进度，展开查看收入、时长与状态；支持拖动、记住位置和同步隐藏金额 |
+| B站摸鱼小窗 | 扫码登录后输入 BV 号听、看视频；无边框小窗可缩放、不置顶，鼠标移入显示播放控制 |
+| 播放与弹幕 | 支持分 P、进度、倍速、可用清晰度、音量和弹幕开关；听视频时仅保留音频流 |
 
-假期与发薪双倒计时、三种发薪策略及自定义周休已加入 `main` 分支，尚未包含在当前 **v1.4.1** 安装包中。公众假期倒计时独立于公司的计薪排班；没有可用节假日数据时提示更新，假期当天显示「假期中」，发薪当天显示「今天发薪」。
+**1.5.0** 新增 B 站摸鱼入口，并包含假期与发薪双倒计时、三种发薪策略和自定义周休。公众假期倒计时独立于公司的计薪排班；没有可用节假日数据时提示更新，假期当天显示「假期中」，发薪当天显示「今天发薪」。
 
 <p align="center"><img src="docs/countdowns.png" width="320" alt="主面板双倒计时：公众假期采用琥珀色，发薪日采用绿色，截图使用演示数据" /></p>
 
@@ -68,6 +71,14 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 </table>
 
 截图使用演示数据。更多界面：[午休与晚饭设置](docs/dinner-settings.png) · [公共假期日历](docs/holiday-calendar.png)。
+
+<table>
+  <tr><th align="center">B站摸鱼入口</th><th align="center">可缩放播放小窗</th></tr>
+  <tr>
+    <td align="center"><img src="docs/bilibili-panel.png" width="280" alt="B站摸鱼面板：扫码登录和 BV 号输入，二维码使用本地测试数据" /></td>
+    <td align="center"><img src="docs/bilibili-player.png" width="480" alt="B站播放小窗：悬停显示进度、分P、倍速、清晰度与弹幕控制，画面使用原创测试动画" /></td>
+  </tr>
+</table>
 
 <a id="download"></a>
 
@@ -126,6 +137,21 @@ Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今
 - 右键点击悬浮窗图标，可展开或收起、隐藏金额、重置位置或隐藏悬浮窗；也可在「偏好设置」或托盘右键菜单中切换显示。隐藏悬浮窗后，后台计时仍继续。
 
 悬浮窗仅在 Windows 提供，macOS 与 Linux 继续使用系统托盘面板。
+
+<a id="bilibili"></a>
+
+### B站摸鱼小窗
+
+点击主面板右上角的「摸鱼」进入 B 站面板。可以先匿名查看公开视频，也可点击「获取二维码」，使用 B 站 App 扫码并在手机确认登录；二维码过期后可重新获取。登录状态保存在本机，点击「退出登录」会清除应用的 B 站登录凭据。
+
+1. 输入 `BV` 号或完整的 B 站视频链接，点击查找。多分 P 视频可先选择要播放的部分。
+2. 点击「听视频」仅播放音频，或点击「看视频」打开视频小窗；播放中可随时切换模式。
+3. 拖动小窗顶部调整位置，拖动窗口边缘调整大小。小窗不置顶，其他应用窗口可以覆盖它。
+4. 鼠标移入小窗时显示控制：播放/暂停、进度、音量、倍速、可用清晰度、分 P、弹幕、最小化和关闭。鼠标移出后收起；键盘聚焦控制时仍保持可见。
+
+视频区域按空格播放或暂停，左右方向键快退或快进 5 秒，按 `Esc` 关闭小窗。最小化小窗可以继续听音频，关闭小窗会停止播放。收起主面板不会中断小窗。
+
+清晰度和可播放内容取决于 B 站接口返回、登录状态及账号权限；受限、下架或暂时失效的视频会提示重试，也可直接打开原站。应用不会绕过会员、地区或内容访问限制。视频与音频通过 Electron 原生网络流式播放，跟随系统代理，不会保存为下载文件；弹幕为只读显示。
 
 <a id="payroll"></a>
 
@@ -205,6 +231,7 @@ npm run dev
 | `npm run test:desktop` | 使用隔离数据运行真实桌面流程检查         |
 | `npm run test:floating` | 在 Windows 检查悬浮窗同步、隐私和位置持久化 |
 | `npm run test:holidays` | 检查在线节假日、代理、离线缓存及桌面日历同步 |
+| `npm run test:bilibili` | 检查 B站登录、原生代理、媒体转发及真实播放器流程 |
 | `node scripts/countdown-smoke.mjs` | 构建后检查主面板倒计时、日期跳转及首屏布局 |
 | `node scripts/payday-rest-smoke.mjs` | 构建后检查自定义周休、三种发薪规则及保存重启 |
 | `npm start`            | 启动已构建的桌面应用                     |
@@ -243,7 +270,7 @@ Linux 托盘可用性取决于桌面环境，部分 GNOME 环境需要 AppIndica
 
 ## 数据与隐私
 
-应用无需登录，设置与工作记录保存在本机 Electron 用户数据目录中：
+工资时钟无需登录，设置与工作记录保存在本机 Electron 用户数据目录中：
 
 | 系统    | 常见目录                                                       |
 | ------- | -------------------------------------------------------------- |
@@ -255,6 +282,9 @@ Linux 托盘可用性取决于桌面环境，部分 GNOME 环境需要 AppIndica
 - `state.backup.json`：上一份有效数据。
 - `floating.json`：悬浮窗显示、展开、位置与金额隐私偏好。
 - `holiday-cache.json`：自动拉取的中国节假日数据、来源及获取时间。
+- `Partitions/touchfish-bilibili/`：独立的 B 站会话与 Cookie 存储，由 Electron 管理。只有主动扫码确认后才保存登录凭据。
+
+B 站登录凭据不会暴露给界面脚本，播放器只接收应用生成的临时媒体地址；小窗不能修改薪资记录或执行应用更新。登录后的接口请求发往 B 站，媒体流来自其受信任的 CDN；媒体请求不携带账号 Cookie。备份整个用户目录会包含登录状态，请妥善保管。
 
 实际位置由 Electron 与运行方式决定。备份或迁移前先退出应用，再复制整个用户数据目录。测试可用 `TOUCHFISH_USER_DATA` 指定独立目录；使用 `--hidden` 启动可直接常驻托盘。
 
@@ -271,3 +301,5 @@ Linux 托盘可用性取决于桌面环境，部分 GNOME 环境需要 AppIndica
 ## 开源许可
 
 本项目采用 [MIT License](LICENSE)。
+
+B 站网页登录、播放接口与 WBI 签名的实现参考维护中的 [fantasytyx/bv](https://github.com/fantasytyx/bv)（源自 aaa1115910/bv，MIT）。本应用使用 Electron 实现桌面交互，未包含 Android 应用；相关版权与许可保留在 [第三方声明](assets/third-party-notices.txt) 中。二维码由 [qrcode](https://github.com/soldair/node-qrcode) 生成。

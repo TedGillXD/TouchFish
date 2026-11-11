@@ -50,8 +50,10 @@ app.whenReady().then(async () => {
     return new Response(JSON.stringify(data), { status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   });
-  require(${JSON.stringify(mainPath)});
 }).catch(error => { console.error(error); app.exit(1); });
+// Keep production module initialization before ready; its ready callback follows
+// the fixture callback above, so no real holiday requests escape this Session.
+require(${JSON.stringify(mainPath)});
 `, "utf8");
 execFileSync(process.execPath, ["--check", harnessPath], { windowsHide: true });
 

@@ -16,8 +16,10 @@ app.setPath('userData', process.env.TOUCHFISH_USER_DATA);
 app.whenReady().then(() => {
   session.fromPartition('touchfish-holidays', { cache: false }).protocol.handle('https', () =>
     new Response('', { status: 503 }));
-  require(${JSON.stringify(mainPath)});
 }).catch(error => { console.error(error); app.exit(1); });
+// Production protocol privileges must be registered while the app is not ready.
+// Our earlier ready callback installs the fixture before service initialization.
+require(${JSON.stringify(mainPath)});
 `, "utf8");
 
 let desktop;

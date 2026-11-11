@@ -33,8 +33,11 @@ app.whenReady().then(() => {
     return new Response(JSON.stringify(data), { status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   });
-  require(${JSON.stringify(mainPath)});
 }).catch(error => { console.error(error); app.exit(1); });
+// Load production code before ready so its privileged schemes register normally.
+// The fixture's ready callback was registered first and installs HTTPS handling
+// before the production application's ready callback starts its services.
+require(${JSON.stringify(mainPath)});
 `, "utf8");
 
 let desktop;

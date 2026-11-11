@@ -1,0 +1,128 @@
+.bili-panel { padding-bottom: 16px; }
+.bili-panel-heading { display: flex; align-items: center; gap: 10px; margin: 2px 0 18px; }
+.bili-panel-heading h1 { font-size: 16px; line-height: 23px; margin: 0; font-weight: 650; }
+.bili-panel-heading p { font-size: 10px; margin: 2px 0 0; color: #a1aaa5; }
+.bili-service-mark { margin-left: auto; color: #75a28c; background: #eff6f1; padding: 9px; border-radius: 11px; display: flex; }
+.bili-account-card { border: 1px solid #e5eee8; border-radius: 15px; padding: 14px; background: #f7faf8; }
+.bili-account-row { display: flex; align-items: center; gap: 10px; }
+.bili-avatar { width: 38px; height: 38px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
+.bili-avatar.fallback { background: #e4f0e8; color: #399773; display: flex; align-items: center; justify-content: center; }
+.bili-account-name { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
+.bili-account-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #425b4c; }
+.bili-account-name small { font-size: 9px; color: #8b9f93; }
+.bili-account-row .text-button { flex-shrink: 0; gap: 4px; font-size: 9px; }
+.bili-login-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bili-login-heading > span { display: flex; align-items: center; gap: 6px; color: #4a6857; font-size: 12px; font-weight: 600; }
+.bili-login-heading > button { gap: 4px; font-size: 10px; color: #3e9773; }
+.bili-login-note { color: #99a79f; font-size: 10px; line-height: 1.8; margin: 10px 0 0; }
+.bili-qr-row { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.bili-qr { width: 142px; height: 142px; position: relative; flex-shrink: 0; background: #fff; border-radius: 10px; padding: 7px; overflow: hidden; }
+.bili-qr img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.bili-qr > span { position: absolute; inset: 0; background: #f8fcf7ec; display: flex; align-items: center; justify-content: center; padding: 12px; text-align: center; color: #428268; font-size: 11px; font-weight: 600; }
+.bili-qr.expired img { opacity: 0.15; filter: blur(3px); }
+.bili-qr-copy { min-width: 0; }
+.bili-qr-copy strong { font-size: 11px; color: #546b5d; line-height: 1.7; }
+.bili-qr-copy p { font-size: 10px; color: #8c9f92; line-height: 1.9; margin: 7px 0; }
+.bili-qr-copy small { font-size: 9px; color: #a2b0a7; font-variant-numeric: tabular-nums; }
+.bili-auth-message { font-size: 9px; margin: 10px 0 0; color: #93a39a; line-height: 1.7; }
+.bili-auth-message.failed { color: #b17d48; }
+.bili-video-section { margin-top: 20px; }
+.bili-video-section h2 { display: flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; margin: 0 0 10px; color: #566b5f; }
+.bili-search { border: 1px solid #e2eae5; display: flex; align-items: center; border-radius: 10px; padding-right: 4px; background: #fafcfb; }
+.bili-search:focus-within { border-color: #8bbfa3; box-shadow: 0 0 0 2px #3eac7510; }
+.bili-search input { border: 0; background: transparent; width: 100%; min-width: 0; padding: 11px 12px; font-size: 11px; color: #476151; outline: none; }
+.bili-search input::placeholder { color: #adb9b1; }
+.bili-search button { color: #4d9a76; padding: 8px; width: 33px; height: 33px; border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+.bili-search button:hover { background: #eaf4ee; }
+.bili-search button:disabled { color: #b6c6bc; }
+.bili-video-card { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 12px; padding: 14px; margin-top: 12px; border: 1px solid #e7ece9; border-radius: 13px; }
+.bili-video-cover { width: 110px; height: 70px; border-radius: 8px; object-fit: cover; background: #f1f5f2; }
+.bili-video-info { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.bili-video-info strong { font-size: 11px; line-height: 1.7; color: #445d4e; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bili-video-info > span { color: #98a69e; font-size: 9px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bili-video-info i { font-style: normal; color: #bec8c1; padding: 0 3px; }
+.bili-video-info > small { color: #acb6b0; font-size: 8px; }
+.bili-page-field { grid-column: 1/-1; display: flex; align-items: center; gap: 10px; font-size: 10px; color: #8a9b90; }
+.bili-page-field select { width: 100%; min-width: 0; flex: 1; border: 1px solid #e4ebe6; border-radius: 7px; padding: 7px; font-size: 10px; color: #5c7365; background: #fafcfb; }
+.bili-play-actions { grid-column: 1/-1; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 1px; }
+.bili-play-actions > button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 8px 9px; font-size: 11px; }
+.bili-play-actions > .secondary { background: #edf5f0; color: #3e8d68; border: 1px solid #e4eee7; border-radius: 9px; }
+.bili-play-actions > .secondary:hover { background: #e2f0e7; }
+.bili-play-actions button:disabled { opacity: 0.55; }
+.bili-panel-error { background: #faf5ef; border: 1px solid #f0e2d3; color: #a47140; font-size: 10px; line-height: 1.8; padding: 9px 11px; border-radius: 9px; margin-top: 12px; }
+.bili-panel-notice { color: #509473; font-size: 10px; line-height: 1.8; margin: 11px 0 0; }
+.bili-now-playing { margin-top: 16px; padding: 11px 12px; border: 1px solid #e8eeea; border-radius: 11px; background: #fbfcfb; }
+.bili-now-playing > span { display: flex; gap: 7px; align-items: center; color: #7c9d8b; }
+.bili-now-playing strong { font-size: 10px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bili-now-playing > div { display: flex; align-items: center; gap: 14px; margin: 8px 0 0 21px; }
+.bili-now-playing .text-button { font-size: 9px; gap: 4px; }
+.bili-panel-note { font-size: 9px; color: #a3ada7; line-height: 1.9; margin: 14px 1px 0; }
+.bili-spinning { animation: bili-spin 1s linear infinite; }
+@keyframes bili-spin { to { transform: rotate(360deg); } }
+
+body.player-mode { width: 100vw; height: 100dvh; overflow: hidden; background: #060907; color-scheme: dark; }
+.player-mode #root { display: block; width: 100%; height: 100%; padding: 0; }
+.bili-player { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 11px; background: #060907; color: #fff; outline: none; user-select: none; }
+.bili-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #050706; }
+.bili-player.audio-mode .bili-video { display: none; }
+.bili-player > audio { display: none; }
+.bili-danmaku { position: absolute; inset: 0; height: 100%; width: 100%; pointer-events: none; z-index: 2; }
+.bili-chrome { position: absolute; left: 0; right: 0; z-index: 5; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 140ms ease, visibility 140ms; }
+.bili-player:hover .bili-chrome,
+.bili-player:has(:focus-visible) .bili-chrome,
+.bili-player:focus-visible .bili-chrome { opacity: 1; visibility: visible; pointer-events: auto; }
+.bili-player-top { top: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 11px 12px 22px; background: linear-gradient(#000a, #0007 50%, transparent); -webkit-app-region: no-drag; }
+.bili-player:hover .bili-player-top { -webkit-app-region: drag; }
+.bili-player-title { font-size: 12px; font-weight: 550; line-height: 18px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bili-player-title > small { display: block; font-size: 9px; font-weight: 400; line-height: 16px; color: #ffffff80; }
+.bili-window-actions { display: flex; gap: 3px; flex-shrink: 0; -webkit-app-region: no-drag; }
+.bili-player button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: #ffffffd9; background: transparent; border-radius: 6px; -webkit-app-region: no-drag; }
+.bili-player button:hover { background: #ffffff1c; color: #fff; }
+.bili-player button:disabled { opacity: 0.35; }
+.bili-player .bili-window-actions button:last-child:hover { background: #c95151bd; }
+.bili-player-bottom { bottom: 0; padding: 24px 14px 10px; background: linear-gradient(transparent, #0009 34%, #000d); -webkit-app-region: no-drag; }
+.bili-progress-row { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+.bili-progress-row > span { font-size: 9px; color: #ffffffa6; font-variant-numeric: tabular-nums; min-width: 30px; }
+.bili-progress-row > span:last-child { text-align: right; }
+.bili-player input[type="range"] { accent-color: #56c398; height: 15px; min-width: 0; padding: 0; cursor: pointer; -webkit-app-region: no-drag; }
+.bili-progress-row input { flex: 1; width: 100%; }
+.bili-controls-row { display: flex; gap: 7px; align-items: center; }
+.bili-controls-row .bili-toggle { color: #fff; }
+.bili-player .bili-volume { width: 64px; flex-shrink: 1; }
+.bili-controls-spacer { flex: 1; min-width: 0; }
+.bili-player select { border: 1px solid #ffffff20; border-radius: 5px; background: #141b18c9; color: #ffffffcf; height: 25px; min-width: 0; max-width: 90px; padding: 3px 4px; font-size: 10px; -webkit-app-region: no-drag; cursor: pointer; }
+.bili-player select option { color: #eff5f1; background: #202923; }
+.bili-player select:disabled { opacity: 0.55; cursor: default; }
+.bili-player select[aria-label="播放速度"] { width: 53px; }
+.bili-player select.bili-quality { width: 89px; }
+.bili-player select.bili-player-pages { width: 95px; }
+.bili-player button.selected { color: #6bdfaa; background: #4fb87e25; }
+.bili-danmaku-message { display: block; font-size: 9px; color: #ffffff9c; margin-bottom: 6px; text-align: right; }
+.bili-audio-stage { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 40px 40px 45px; position: relative; overflow: hidden; background: linear-gradient(140deg, #12261d, #080c0a); }
+.bili-audio-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.16; filter: blur(18px); transform: scale(1.1); pointer-events: none; }
+.bili-audio-stage > strong { position: relative; width: 100%; max-width: 500px; font-size: 13px; font-weight: 550; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bili-audio-stage > small { position: relative; font-size: 10px; color: #91aa9b; }
+.bili-audio-symbol { color: #6dc89a; height: 44px; width: 60px; display: flex; align-items: center; justify-content: center; position: relative; }
+.bili-audio-symbol.playing { animation: bili-breathe 2s ease-in-out infinite; }
+@keyframes bili-breathe { 50% { opacity: 0.45; } }
+.bili-player-loading, .bili-buffering { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 11px; color: #d3eadc; font-size: 11px; pointer-events: none; z-index: 3; }
+.bili-buffering { background: #050a072b; }
+.bili-player-error { position: absolute; inset: 0; padding: 36px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 11px; text-align: center; background: #08100deb; z-index: 4; }
+.bili-player-error > strong { font-size: 14px; font-weight: 550; }
+.bili-player-error > p { font-size: 11px; color: #94ac9e; line-height: 1.8; max-width: 420px; margin: 0; }
+.bili-player-error > div { display: flex; gap: 9px; margin-top: 5px; }
+.bili-player-error button { width: auto; height: 31px; padding: 5px 10px; font-size: 10px; gap: 5px; background: #ffffff10; border: 1px solid #ffffff10; }
+@media (max-width: 500px) {
+  .bili-player .bili-volume { display: none; }
+  .bili-controls-row { gap: 5px; }
+  .bili-player select.bili-player-pages { width: 61px; }
+  .bili-player select.bili-quality { width: 75px; }
+  .bili-player-top { padding: 8px 8px 20px; gap: 6px; }
+  .bili-window-actions { gap: 0; }
+  .bili-player button { width: 26px; height: 26px; }
+  .bili-player-bottom { padding: 21px 9px 7px; }
+  .bili-player-title { font-size: 10px; }
+  .bili-player-title > small { font-size: 8px; }
+}
+@media (hover: none) { .bili-player .bili-chrome { opacity: 1; visibility: visible; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .bili-spinning, .bili-audio-symbol.playing { animation: none; } }

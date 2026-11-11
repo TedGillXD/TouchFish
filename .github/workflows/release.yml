@@ -104,6 +104,18 @@ jobs:
         run: |
           node scripts/holiday-service-smoke.mjs
           node scripts/holiday-ui-smoke.mjs
+      - name: Verify countdowns and custom payday schedules
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/countdown-smoke.mjs
+          node scripts/payday-rest-smoke.mjs
+      - name: Verify Bilibili login and real media playback
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/bilibili-service-smoke.mjs
+          node scripts/bilibili-smoke.mjs
       - name: Package native installers and update metadata
         run: npx electron-builder ${{ matrix.target }} --publish never
         env:
@@ -171,10 +183,10 @@ jobs:
           cat > release-notes.md <<'NOTES'
           ## 更新内容
 
-          - 中国大陆节假日改为自动联网拉取，不再在应用中内置具体年份。
-          - 启动和浏览日历时按需更新，支持系统代理、本地缓存及手动刷新；获取失败时保留已有有效数据。
-          - 日历、工作日统计、发薪日调整及悬浮窗使用同一份节假日数据；手动排班和已经开始的计薪快照保留。
-          - 保留三平台安装包与跟随系统代理的应用内更新，升级继续使用本地设置和工作记录。
+          - 新增摸鱼入口：B 站扫码登录，输入 BV 号听视频或看视频，支持分 P。
+          - 视频采用可缩放、无边框、非置顶小窗，鼠标移入显示弹幕、进度、音量、倍速与画质控制。
+          - 新增公众假期和发薪日双倒计时，支持自定义双休日及大小周，发薪支持提前、顺延和当天照常发薪。
+          - 保留三端安装包、系统代理更新与本地计薪记录；播放使用账号已有权限，登录信息留在本机独立会话。
 
           ## 安装包
 
