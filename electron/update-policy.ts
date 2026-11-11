@@ -1,6 +1,7 @@
 export const RELEASES_URL = "https://github.com/TedGillXD/TouchFish/releases";
-export const LATEST_RELEASE_API =
-  "https://api.github.com/repos/TedGillXD/TouchFish/releases/latest";
+// This public download endpoint avoids GitHub's anonymous REST API rate limit.
+export const LATEST_MANIFEST_URL =
+  "https://github.com/TedGillXD/TouchFish/releases/latest/download/release-manifest.json";
 
 export type ReleaseFileKind = "setup" | "portable" | "dmg" | "zip" | "appimage";
 export interface ReleaseFile {
@@ -125,6 +126,20 @@ export function parseManifest(
     };
   });
   return { schemaVersion: 1, version: expectedVersion, files };
+}
+
+/** The manifest's validated stable version pins all subsequent downloads to one release. */
+export function parseLatestManifest(value: unknown): {
+  release: ReleaseTarget;
+  manifest: ReleaseManifest;
+} {
+  if (!object(value)) throw new Error("INVALID_MANIFEST");
+  const version = stableVersion(value.version);
+  if (!version || value.version !== version)
+    throw new Error("INVALID_MANIFEST");
+  const manifest = parseManifest(value, version);
+  const release = parseRelease({ tag_name: `v${version}` });
+  return { release, manifest };
 }
 
 export function chooseReleaseFile(

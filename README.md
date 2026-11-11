@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-1f9d75?style=flat-square" alt="版本 1.3.0" />
+  <img src="https://img.shields.io/badge/version-1.3.1-1f9d75?style=flat-square" alt="版本 1.3.1" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -81,12 +81,16 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 
 打开「设置 → 应用更新」，点击「检查更新」。发现稳定版本后可查看下载进度，下载完成并通过完整性校验后，再选择安装。检查新版、读取更新清单以及下载安装包均使用 Electron 的原生网络栈，跟随**系统代理设置（含 PAC / WPAD）**；切换代理后可直接重试，无需在应用中填写代理账号或密码。
 
+从 1.3.1 起，检查新版直接读取 GitHub Releases 中的公开更新清单，避免依赖匿名 REST API 配额；共享代理出口的 API 额度耗尽时，仍可通过 Release 文件检查和下载更新。
+
 - Windows 安装版和 Linux AppImage 支持下载后重启安装；安装前会先保存已排队的工作记录。
 - 便携版或其他不支持原位安装的运行方式会打开已校验的安装包，由用户完成安装。
 - macOS 当前发布包未配置开发者签名与公证，因此使用已校验的 DMG 完成更新：打开后将新版应用拖入「应用程序」，覆盖旧版。
 - 请先保存正在编辑的设置。网络、代理身份验证或文件校验失败时，应用会显示可重试的错误，校验失败的文件不会进入安装。
 
 1.3.0 是首个包含应用内更新入口的版本；更旧版本需先从 Releases 手动下载一次。更新保留本地设置与计薪记录。
+
+已安装 1.3.0 的用户若遇匿名 API 限流，可从 Releases 手动升级至 1.3.1 或更新版本。
 
 <a id="quick-start"></a>
 

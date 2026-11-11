@@ -5,6 +5,7 @@ import {
   chooseReleaseFile,
   isNewerVersion,
   parseManifest,
+  parseLatestManifest,
   parseRelease,
   safeUpdateError,
   stableVersion,
@@ -83,6 +84,28 @@ test("manifest requires exact platform/version filenames and both valid checksum
   }
   assert.throws(() =>
     parseManifest({ ...manifest(), files: [file, file] }, "1.4.0"),
+  );
+});
+
+test("latest download manifest pins a stable official release without using the REST API", () => {
+  const parsed = parseLatestManifest(manifest());
+  assert.equal(parsed.release.version, "1.4.0");
+  assert.equal(
+    parsed.release.downloadBase,
+    "https://github.com/TedGillXD/TouchFish/releases/download/v1.4.0/",
+  );
+  assert.equal(parsed.manifest.files[0].name, file.name);
+  for (const version of ["v1.4.0", "1.4.0-beta.1", "1.3.0", "../1.4.0"]) {
+    assert.throws(() => parseLatestManifest({ ...manifest(), version }));
+  }
+  assert.throws(() =>
+    parseLatestManifest({
+      ...manifest(),
+      files: [{ ...file, name: "TouchFish-1.5.0-win-x64-setup.exe" }],
+    }),
+  );
+  assert.throws(() =>
+    parseLatestManifest({ ...manifest(), files: [{ ...file, sha512: "bad" }] }),
   );
 });
 

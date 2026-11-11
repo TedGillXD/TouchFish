@@ -9,9 +9,8 @@ import type { UpdateState } from "../src/update-types";
 import {
   chooseReleaseFile,
   isNewerVersion,
-  LATEST_RELEASE_API,
-  parseManifest,
-  parseRelease,
+  LATEST_MANIFEST_URL,
+  parseLatestManifest,
   RELEASES_URL,
   safeUpdateError,
   trustedUpdateUrl,
@@ -445,8 +444,8 @@ export function createUpdaterController(options: UpdaterOptions) {
       });
       try {
         await deadline(prepareProxy(), 15000);
-        const release = parseRelease(
-          await deadline(readJson(LATEST_RELEASE_API), 45000),
+        const { release, manifest } = parseLatestManifest(
+          await deadline(readJson(LATEST_MANIFEST_URL), 45000),
         );
         if (!isNewerVersion(release.version, state.currentVersion))
           return emit({
@@ -455,10 +454,6 @@ export function createUpdaterController(options: UpdaterOptions) {
             releaseUrl: release.releaseUrl,
             message: "当前已是最新正式版本。",
           });
-        const manifest = parseManifest(
-          await readJson(`${release.downloadBase}release-manifest.json`),
-          release.version,
-        );
         const file = chooseReleaseFile(manifest, platform, arch);
         if (!file) throw new Error("UNSUPPORTED_ASSET");
         if (automatic) {

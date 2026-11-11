@@ -54,6 +54,7 @@ const version = "9.9.9";
 const installerName = `TouchFish-${version}-mac-x64.dmg`;
 const manifestName = "release-manifest.json";
 const releasePath = `/TedGillXD/TouchFish/releases/download/v${version}`;
+const latestManifestPath = `/TedGillXD/TouchFish/releases/latest/download/${manifestName}`;
 const payload = Buffer.alloc(192 * 1024, 0x54);
 payload.write(
   "TouchFish verified updater fixture; not an executable installer.",
@@ -75,21 +76,6 @@ const manifest = {
     },
   ],
 };
-const latest = {
-  tag_name: `v${version}`,
-  name: `TouchFish ${version}`,
-  draft: false,
-  prerelease: false,
-  html_url: `https://github.com/TedGillXD/TouchFish/releases/tag/v${version}`,
-  assets: [manifestName, installerName].map((name) => ({
-    name,
-    browser_download_url: `https://github.com${releasePath}/${name}`,
-    size:
-      name === installerName
-        ? payload.length
-        : Buffer.byteLength(JSON.stringify(manifest)),
-  })),
-};
 let mode = "good";
 const requests = [];
 const tunnels = [];
@@ -99,16 +85,33 @@ const origin = createTlsServer(
   (request, response) => {
     requests.push({ host: request.headers.host, path: request.url });
     if (request.url === "/repos/TedGillXD/TouchFish/releases/latest") {
-      response.writeHead(mode === "offline" ? 503 : 200, {
+      // Old REST-based checks fail while public Release downloads stay usable.
+      response.writeHead(403, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
+        "X-RateLimit-Remaining": "0",
       });
       response.end(
-        JSON.stringify(
-          mode === "offline" ? { message: "Fixture unavailable" } : latest,
-        ),
+        JSON.stringify({
+          message: "API rate limit exceeded for fixture shared IP",
+        }),
       );
+    } else if (request.url === latestManifestPath) {
+      if (mode === "offline") {
+        response.writeHead(503, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ message: "Fixture unavailable" }));
+      } else {
+        response.writeHead(302, {
+          Location: `https://github.com${releasePath}/${manifestName}`,
+        });
+        response.end();
+      }
     } else if (request.url === `${releasePath}/${manifestName}`) {
+      response.writeHead(302, {
+        Location: `https://release-assets.githubusercontent.com/${manifestName}`,
+      });
+      response.end();
+    } else if (request.url === `/${manifestName}`) {
       response.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
@@ -202,7 +205,7 @@ let latestState;
 const events=[];
 let failFlush=false;
 const controller=createUpdaterController({
-  networkSession,currentVersion:'1.3.0',platform:'darwin',arch:'x64',packaged:true,
+  networkSession,currentVersion:'1.3.1',platform:'darwin',arch:'x64',packaged:true,
   onState:state=>{latestState=state;},
   beforeInstall:async()=>{events.push('flush');if(failFlush)throw new Error('Fixture save failed');},
   openInstaller:async(path)=>{events.push('open');const bytes=await readFile(path);if(bytes.length!==${payload.length}||createHash('sha256').update(bytes).digest('hex')!==${JSON.stringify(sha256)})throw new Error('Wrong installer content');return '';},
@@ -212,8 +215,8 @@ const executor=autoUpdater.httpExecutor;
 if(!(executor instanceof ElectronHttpExecutor))throw new Error('Expected actual ElectronHttpExecutor');
 async function nativeCheck(){
   await networkSession.setProxy({mode:'system'});await networkSession.forceReloadProxyConfig();
-  const result=await executor.request(configureRequestOptionsFromUrl('https://api.github.com/repos/TedGillXD/TouchFish/releases/latest',{headers:{Accept:'application/json'}}),new CancellationToken());
-  return JSON.parse(result).tag_name;
+  const result=await executor.request(configureRequestOptionsFromUrl(${JSON.stringify(`https://github.com${latestManifestPath}`)},{headers:{Accept:'application/json'}}),new CancellationToken());
+  return JSON.parse(result).version;
 }
 async function nativeDownload(){
   await networkSession.setProxy({mode:'system'});await networkSession.forceReloadProxyConfig();
@@ -274,7 +277,7 @@ try {
   await desktop.firstWindow();
   expect(
     await desktop.evaluate(() => globalThis.proxySmoke.nativeCheck()),
-  ).toBe(`v${version}`);
+  ).toBe(version);
   expect(
     await desktop.evaluate(() => globalThis.proxySmoke.nativeDownload()),
   ).toBe(sha256);
@@ -291,12 +294,9 @@ try {
   mode = "good";
   await invoke("check");
   await expect.poll(phase).toBe("available");
-  expect(
-    requests.some(
-      (request) =>
-        request.path === "/repos/TedGillXD/TouchFish/releases/latest",
-    ),
-  ).toBe(true);
+  expect(requests.some((request) => request.path === latestManifestPath)).toBe(
+    true,
+  );
   expect(
     requests.some(
       (request) => request.path === `${releasePath}/${manifestName}`,
@@ -323,7 +323,10 @@ try {
   await expect.poll(phase).toBe("available");
   await invoke("download");
   await expect.poll(phase).toBe("downloaded");
-  expect(tunnels).toEqual(expect.arrayContaining(hosts));
+  expect(tunnels).toEqual(
+    expect.arrayContaining(hosts.filter((host) => host !== "api.github.com")),
+  );
+  expect(tunnels).not.toContain("api.github.com");
   expect(
     requests.some(
       (request) =>
@@ -348,8 +351,14 @@ try {
   const modes = await desktop.evaluate(() => globalThis.proxySmoke.proxyModes);
   expect(modes.length).toBeGreaterThanOrEqual(6);
   expect(modes.every((value) => value === "system")).toBe(true);
+  expect(
+    requests.some(
+      (request) =>
+        request.path === "/repos/TedGillXD/TouchFish/releases/latest",
+    ),
+  ).toBe(false);
   console.log(
-    "PASS: real Electron system-mode setup and electron-updater ElectronHttpExecutor; HTTPS CONNECT proxy for release metadata/manifest/download redirects, native/manual checksum rejection, error retry, save-before-install ordering; no OS proxy or installed application changed.",
+    "PASS: API-free Release checks despite a REST-403 fixture; real Electron system proxy and ElectronHttpExecutor, HTTPS CONNECT manifest/binary redirects, native/manual checksum rejection, authentication/error retry and save-before-install ordering; no OS proxy or installed application changed.",
   );
   await writeFile(
     join(directory, "report.json"),
