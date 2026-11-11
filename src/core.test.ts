@@ -12,6 +12,7 @@ import {
   getPayrollPeriod,
   getNextPayday,
   isWorkday,
+  isWeeklyRestDay,
   monthDays,
   monthEarnings,
   normalizeData,
@@ -56,6 +57,108 @@ test("alternate pattern continues across month and year boundaries, including be
   settings.alternateAnchor = "2026-12-28";
   assert.equal(isWorkday("2027-01-02", settings), false);
   assert.equal(isWorkday("2027-01-09", settings), true);
+});
+
+test("custom double rest days migrate safely and validate only relevant weekly rules", () => {
+  const legacy = JSON.parse(JSON.stringify(fixture().settings));
+  delete legacy.doubleRestDays;
+  assert.deepEqual(normalizeSettings(legacy).doubleRestDays, [6, 0]);
+  for (const doubleRestDays of [null, "1,2", [], [1], [1, 2, 3], [1, 1], [1, 7], [-1, 2], [1.5, 2], [1, "2"], [NaN, 2]])
+    assert.deepEqual(normalizeSettings({ ...legacy, doubleRestDays }).doubleRestDays, [6, 0]);
+  const input = { ...legacy, doubleRestDays: [0, 1] };
+  const normalized = normalizeSettings(input);
+  assert.deepEqual(normalized.doubleRestDays, [1, 0], "weekdays use Monday-to-Sunday order");
+  input.doubleRestDays[0] = 5;
+  assert.deepEqual(normalized.doubleRestDays, [1, 0], "normalization owns its array");
+  const { settings } = fixture();
+  settings.doubleRestDays = [1, 2];
+  settings.payroll.holidayAdjustment = "none";
+  assert.deepEqual(validateSettings(settings), []);
+  assert.equal(normalizeSettings(settings).payroll.holidayAdjustment, "none");
+  settings.doubleRestDays = [1];
+  assert.match(validateSettings(settings).join(" "), /两个不同的休息日/);
+  settings.scheduleMode = "single";
+  assert.deepEqual(validateSettings(settings), [], "an unused double-week draft does not block single rest");
+});
+
+test("Monday-Tuesday rest makes weekends working and changes cycle wage denominators", () => {
+  const { settings } = fixture();
+  settings.publicHolidays = false;
+  settings.doubleRestDays = [1, 2];
+  for (const key of ["2026-11-09", "2026-11-10"]) {
+    assert.equal(isWeeklyRestDay(key, settings), true);
+    assert.equal(isWorkday(key, settings), false);
+  }
+  for (const key of ["2026-11-11", "2026-11-14", "2026-11-15"])
+    assert.equal(isWorkday(key, settings), true);
+  assert.equal(countWorkdays(2026, 12, settings), 22);
+  settings.payroll.cycleStartDay = 26;
+  const period = getPayrollPeriod("2026-11-11", settings);
+  assert.equal(period.start, "2026-10-26");
+  assert.equal(period.end, "2026-11-25");
+  assert.equal(period.workdays, 21);
+  assert.equal(getDayPlan("2026-11-14", settings).dailyWage, 15000 / 21);
+});
+
+test("custom rest days retain official makeup and manual override precedence", () => {
+  const { settings } = fixture();
+  settings.doubleRestDays = [1, 2];
+  assert.equal(isWorkday("2026-10-01", settings), false, "Thursday's public holiday beats a normal shift");
+  settings.overrides["2026-10-01"] = "work";
+  settings.overrides["2026-11-09"] = "work";
+  assert.equal(isWorkday("2026-10-01", settings), true);
+  assert.equal(isWorkday("2026-11-09", settings), true);
+  settings.doubleRestDays = [0, 1];
+  assert.equal(isWeeklyRestDay("2026-01-04", settings), true);
+  assert.equal(isWorkday("2026-01-04", settings), true, "Sunday's official makeup overrides weekly rest");
+  settings.overrides["2026-01-04"] = "rest";
+  assert.equal(isWorkday("2026-01-04", settings), false);
+  delete settings.overrides["2026-01-04"];
+  settings.publicHolidays = false;
+  assert.equal(isWorkday("2026-01-04", settings), false);
+});
+
+test("alternate custom rest days rotate on both sides of the anchor and across New Year", () => {
+  const { settings } = fixture();
+  settings.publicHolidays = false;
+  settings.scheduleMode = "alternate";
+  settings.doubleRestDays = [1, 2];
+  settings.restDay = 3;
+  settings.alternateAnchor = "2026-12-28";
+  for (const key of ["2026-12-14", "2026-12-15", "2026-12-28", "2026-12-29", "2027-01-06"])
+    assert.equal(isWorkday(key, settings), false, key);
+  for (const key of ["2026-12-16", "2026-12-21", "2026-12-22", "2026-12-30", "2027-01-02", "2027-01-04"])
+    assert.equal(isWorkday(key, settings), true, key);
+  assert.equal(isWorkday("2026-12-23", settings), false);
+  settings.alternateAnchor = "2027-01-04";
+  assert.equal(isWorkday("2026-12-28", settings), true);
+  assert.equal(isWorkday("2027-01-04", settings), false);
+  assert.equal(isWorkday("2027-01-06", settings), true);
+});
+
+test("changing weekly rest and same-day payday never reprices an already started record", () => {
+  let data = fixture();
+  data.settings.publicHolidays = false;
+  data.settings.payroll.cycleStartDay = 26;
+  data = startWork(data, time("2026-11-09", "09:00"));
+  data = pauseWork(data, time("2026-11-09", "10:00"));
+  const original = structuredClone(data.records["2026-11-09"].plan);
+  const earned = getDaySummary(data, time("2026-11-09", "11:00")).earnings;
+  assert.equal(original.workdays, 23);
+  data.settings.doubleRestDays = [1, 2];
+  data.settings.payroll.holidayAdjustment = "none";
+  const restored = normalizeData(JSON.parse(JSON.stringify(data)));
+  assert.deepEqual(restored.settings.doubleRestDays, [1, 2]);
+  assert.equal(restored.settings.payroll.holidayAdjustment, "none");
+  assert.deepEqual(restored.records["2026-11-09"].plan, original);
+  assert.equal(getDaySummary(restored, time("2026-11-09", "11:00")).earnings, earned);
+  assert.equal(getDayPlan("2026-11-10", restored.settings).working, false);
+  assert.equal(getDayPlan("2026-11-14", restored.settings).workdays, 21);
+  const legacy = JSON.parse(JSON.stringify(restored));
+  delete legacy.settings.doubleRestDays;
+  const old = normalizeData(legacy);
+  assert.deepEqual(old.settings.doubleRestDays, [6, 0]);
+  assert.deepEqual(old.records["2026-11-09"].plan, original);
 });
 
 test("date overrides determine denominator and work status", () => {

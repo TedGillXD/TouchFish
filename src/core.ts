@@ -10,7 +10,7 @@ export interface PayrollSettings {
   payDay: number;
   /** Month containing the period end, or one/two months after that month. */
   payMonthOffset: 0 | 1 | 2;
-  holidayAdjustment: "previous" | "next";
+  holidayAdjustment: "previous" | "next" | "none";
 }
 export interface PayrollPeriod {
   start: string;
@@ -26,6 +26,7 @@ export interface Settings {
   monthlySalary: number;
   scheduleMode: ScheduleMode;
   restDay: number;
+  doubleRestDays: number[];
   alternateAnchor: string;
   weekdayHours: Record<number, DayHours>;
   lunch: { enabled: boolean; start: string; end: string };
@@ -91,6 +92,15 @@ function validMonthDay(value: unknown): value is number {
   return finite(value) && Number.isInteger(value) && value >= 1 && value <= 31;
 }
 
+function validWeekday(value: unknown): value is number {
+  return finite(value) && Number.isInteger(value) && value >= 0 && value <= 6;
+}
+
+function validDoubleRestDays(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length === 2 &&
+    validWeekday(value[0]) && validWeekday(value[1]) && value[0] !== value[1];
+}
+
 export function dateKey(value: Date | number = Date.now()): string {
   const date = value instanceof Date ? value : new Date(value);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -134,6 +144,7 @@ export function defaultSettings(): Settings {
     monthlySalary: 15000,
     scheduleMode: "double",
     restDay: 0,
+    doubleRestDays: [6, 0],
     alternateAnchor: dateKey(monday),
     weekdayHours: Object.fromEntries(
       Array.from({ length: 7 }, (_, weekday) => [
@@ -180,6 +191,9 @@ export function normalizeSettings(value: unknown): Settings {
     value.restDay <= 6
   )
     settings.restDay = value.restDay;
+  if (validDoubleRestDays(value.doubleRestDays))
+    settings.doubleRestDays = [...value.doubleRestDays].sort((a, b) =>
+      ((a + 6) % 7) - ((b + 6) % 7));
   if (validDateKey(value.alternateAnchor)) {
     const anchor = localDate(value.alternateAnchor);
     anchor.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
@@ -227,7 +241,8 @@ export function normalizeSettings(value: unknown): Settings {
       settings.payroll.payMonthOffset = payroll.payMonthOffset;
     if (
       payroll.holidayAdjustment === "previous" ||
-      payroll.holidayAdjustment === "next"
+      payroll.holidayAdjustment === "next" ||
+      payroll.holidayAdjustment === "none"
     )
       settings.payroll.holidayAdjustment = payroll.holidayAdjustment;
   }
@@ -258,7 +273,7 @@ export function validateSettings(settings: Settings): string[] {
     errors.push("请选择有效的发薪月份");
   if (
     !settings.payroll ||
-    !["previous", "next"].includes(settings.payroll.holidayAdjustment)
+    !["previous", "next", "none"].includes(settings.payroll.holidayAdjustment)
   )
     errors.push("请选择发薪日遇休息日时的调整方式");
   if (
@@ -267,6 +282,8 @@ export function validateSettings(settings: Settings): string[] {
     settings.restDay > 6
   )
     errors.push("请选择有效的休息日");
+  if (settings.scheduleMode !== "single" && !validDoubleRestDays(settings.doubleRestDays))
+    errors.push("双休周请选择两个不同的休息日");
   if (!validDateKey(settings.alternateAnchor))
     errors.push("请选择有效的大小周基准日期");
   else if (
@@ -371,16 +388,24 @@ export function isWorkday(key: string, settings: Settings): boolean {
   if (override) return override === "work";
   const holiday = settings.publicHolidays ? getPublicHoliday(key) : null;
   if (holiday) return holiday.kind === "work";
+  return !isWeeklyRestDay(key, settings);
+}
+
+/** The weekly rule alone, before official holidays and per-date overrides. */
+export function isWeeklyRestDay(key: string, settings: Settings): boolean {
+  if (!validDateKey(key)) return false;
   const weekday = localDate(key).getDay();
-  if (settings.scheduleMode === "double") return weekday !== 0 && weekday !== 6;
-  if (settings.scheduleMode === "single") return weekday !== settings.restDay;
+  const doubleRestDays = validDoubleRestDays(settings.doubleRestDays)
+    ? settings.doubleRestDays : [6, 0];
+  if (settings.scheduleMode === "double") return doubleRestDays.includes(weekday);
+  if (settings.scheduleMode === "single") return weekday === settings.restDay;
   const weekOffset = Math.round(
     (mondayOrdinal(key) - mondayOrdinal(settings.alternateAnchor)) / 7,
   );
   const isDoubleWeek = ((weekOffset % 2) + 2) % 2 === 0;
   return isDoubleWeek
-    ? weekday !== 0 && weekday !== 6
-    : weekday !== settings.restDay;
+    ? doubleRestDays.includes(weekday)
+    : weekday === settings.restDay;
 }
 
 export function monthDays(
@@ -485,10 +510,11 @@ function payrollPeriodForMonth(
     settings.payroll.payDay,
   );
   const direction = settings.payroll.holidayAdjustment === "previous" ? -1 : 1;
-  let actualPayday: string | null = null;
+  let actualPayday: string | null = settings.payroll.holidayAdjustment === "none"
+    ? nominalPayday : null;
   let lastSearched = nominalPayday;
   // The nominal date itself is accepted when working; otherwise search only in the selected direction.
-  for (let distance = 0; distance <= 366; distance++) {
+  for (let distance = 0; actualPayday === null && distance <= 366; distance++) {
     const candidate = addCalendarDays(nominalPayday, distance * direction);
     lastSearched = candidate;
     if (!validDateKey(candidate)) break;
@@ -508,7 +534,8 @@ function payrollPeriodForMonth(
       : 0,
     holidayCoverageComplete:
       coveredHolidayYears(start, end, settings) &&
-      coveredHolidayYears(nominalPayday, lastSearched, settings),
+      (settings.payroll.holidayAdjustment === "none" ||
+        coveredHolidayYears(nominalPayday, lastSearched, settings)),
   };
 }
 

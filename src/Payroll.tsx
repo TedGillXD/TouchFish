@@ -29,10 +29,12 @@ const money = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-const adjustmentText = (period: PayrollPeriod) =>
+const adjustmentText = (period: PayrollPeriod, policy: Settings["payroll"]["holidayAdjustment"]) =>
   !period.actualPayday
     ? "一年内没有可用工作日，请检查排班"
-    : period.adjustmentDays === 0
+    : policy === "none"
+      ? "按计划日期发薪，节假日和休息日不调整"
+      : period.adjustmentDays === 0
       ? "当天为工作日，无需调整"
       : `${period.adjustmentDays < 0 ? "提前" : "顺延"} ${Math.abs(period.adjustmentDays)} 天，避开非工作日`;
 
@@ -106,24 +108,36 @@ export function PayrollSettings({
       </div>
       <div className="field">
         <span>遇非工作日的处理</span>
-        <div className="segmented" role="group" aria-label="遇非工作日的处理">
+        <div className="segmented payday-policy" role="group" aria-label="遇非工作日的处理">
           <button
+            aria-label="提前到最近工作日"
             aria-pressed={payroll.holidayAdjustment === "previous"}
             className={payroll.holidayAdjustment === "previous" ? "active" : ""}
             onClick={() => patch({ holidayAdjustment: "previous" })}
           >
-            提前到最近工作日
+            提前发薪
           </button>
           <button
+            aria-label="顺延到最近工作日"
             aria-pressed={payroll.holidayAdjustment === "next"}
             className={payroll.holidayAdjustment === "next" ? "active" : ""}
             onClick={() => patch({ holidayAdjustment: "next" })}
           >
-            顺延到最近工作日
+            顺延发薪
+          </button>
+          <button
+            aria-label="当天发薪"
+            aria-pressed={payroll.holidayAdjustment === "none"}
+            className={payroll.holidayAdjustment === "none" ? "active" : ""}
+            onClick={() => patch({ holidayAdjustment: "none" })}
+          >
+            当天发薪
           </button>
         </div>
         <small>
-          周休、公共假期、调休补班和手动排班均参与判断。发薪日不存在时先取当月最后一天，再调整。
+          {payroll.holidayAdjustment === "none"
+            ? "按计划日期照常发薪，遇公共假期或休息日也不移动。短月没有指定日期时，仍取当月最后一天。"
+            : "提前或顺延至最近工作日，周休、公共假期、调休补班和手动排班均参与判断。发薪日不存在时先取当月最后一天。"}
         </small>
       </div>
       <div className="payroll-preview">
@@ -139,7 +153,7 @@ export function PayrollSettings({
             ? preview.actualPayday.replaceAll("-", ".")
             : "暂无可用日期"}
         </strong>
-        <span>{adjustmentText(preview)}</span>
+        <span>{adjustmentText(preview, payroll.holidayAdjustment)}</span>
       </div>
       {payroll.payMonthOffset === 0 && preview.nominalPayday < preview.end && (
         <p className="holiday-coverage">
@@ -148,7 +162,9 @@ export function PayrollSettings({
       )}
       {!preview.holidayCoverageComplete && (
         <p className="payroll-warning">
-          部分日期的节假日尚未获取或未公布，发薪日暂按已有排班估算。
+          {payroll.holidayAdjustment === "none"
+            ? "部分日期的节假日尚未获取或未公布，周期工作日和参考日薪暂为估算；发薪日期按计划保留。"
+            : "部分日期的节假日尚未获取或未公布，发薪日暂按已有排班估算。"}
         </p>
       )}
     </section>
@@ -269,13 +285,15 @@ export function PayrollPanel({
               : "暂无可用日期"}
           </strong>
         </div>
-        <p>{adjustmentText(period)}</p>
+        <p>{adjustmentText(period, data.settings.payroll.holidayAdjustment)}</p>
         {period.actualPayday && period.actualPayday < today && (
           <small>计划日期已过；此处不代表工资已经到账。</small>
         )}
         {!period.holidayCoverageComplete && (
           <div className="payroll-warning">
-            部分年份尚无官方节假日数据，日期暂按已有排班估算。
+            {data.settings.payroll.holidayAdjustment === "none"
+              ? "部分年份尚无官方节假日数据，周期工作日和参考日薪暂为估算；发薪日期按计划保留。"
+              : "部分年份尚无官方节假日数据，日期暂按已有排班估算。"}
           </div>
         )}
       </section>

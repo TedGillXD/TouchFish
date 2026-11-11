@@ -144,3 +144,59 @@ test("day countdowns remain calendar based around daylight-saving changes", () =
   assert.equal(next.actualPayday, "2026-03-09");
   assert.equal(next.daysUntil, 2);
 });
+
+test("same-day pay keeps a holiday, weekly rest or manually blocked date unchanged", () => {
+  const settings = defaultSettings();
+  settings.payroll.payDay = 5;
+  settings.payroll.holidayAdjustment = "none";
+  for (const mode of ["double", "single", "alternate"] as const) {
+    settings.scheduleMode = mode;
+    settings.doubleRestDays = [1, 2];
+    settings.restDay = 1;
+    settings.overrides["2026-10-05"] = "rest";
+    const period = getPayrollPeriod("2026-09-15", settings);
+    assert.equal(period.nominalPayday, "2026-10-05");
+    assert.equal(period.actualPayday, "2026-10-05", mode);
+    assert.equal(period.adjustmentDays, 0);
+  }
+  settings.payroll.payDay = 15;
+  assert.equal(getPayrollPeriod("2026-10-15", settings).actualPayday, "2026-11-15", "Sunday is still a payday");
+  settings.publicHolidays = false;
+  for (let key = "2026-01-01"; key <= "2027-12-31"; key = addDays(key, 1))
+    settings.overrides[key] = "rest";
+  const closed = getPayrollPeriod("2026-10-15", settings);
+  assert.equal(closed.workdays, 0);
+  assert.equal(closed.actualPayday, "2026-11-15", "same-day pay needs no available workday in the following year");
+});
+
+test("same-day pay clamps short months and retains New Year and today's countdown", () => {
+  const settings = defaultSettings();
+  settings.payroll.holidayAdjustment = "none";
+  settings.payroll.payDay = 31;
+  const short = getPayrollPeriod("2027-01-10", settings);
+  assert.equal(short.nominalPayday, "2027-02-28");
+  assert.equal(short.actualPayday, "2027-02-28");
+  assert.equal(short.adjustmentDays, 0);
+  assert.equal(getPayrollPeriod("2024-01-10", settings).actualPayday, "2024-02-29");
+  settings.payroll.payDay = 1;
+  const yearEnd = getPayrollPeriod("2026-12-10", settings);
+  assert.equal(yearEnd.actualPayday, "2027-01-01");
+  assert.equal(getNextPayday("2026-12-31", settings)!.daysUntil, 1);
+  const today = getNextPayday("2027-01-01", settings)!;
+  assert.equal(today.actualPayday, "2027-01-01");
+  assert.equal(today.daysUntil, 0);
+  assert.equal(getNextPayday("2027-01-02", settings)!.actualPayday, "2027-02-01");
+});
+
+test("same-day pay does not require a missing payday-year calendar but retains wage coverage warnings", () => {
+  const settings = defaultSettings();
+  settings.payroll.holidayAdjustment = "none";
+  settings.payroll.payMonthOffset = 2;
+  settings.payroll.payDay = 1;
+  const period = getPayrollPeriod("2027-11-10", settings);
+  assert.equal(period.actualPayday, "2028-01-01");
+  assert.equal(period.holidayCoverageComplete, true, "the wage period's announced year is covered; payday is unconditional");
+  const missingWages = getPayrollPeriod("2028-02-10", settings);
+  assert.equal(missingWages.actualPayday, "2028-04-01");
+  assert.equal(missingWages.holidayCoverageComplete, false, "unknown wage-period holidays remain an estimate");
+});

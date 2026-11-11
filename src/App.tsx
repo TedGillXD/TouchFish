@@ -536,7 +536,9 @@ function App() {
               <p className={`work-hint ${!currentPeriod.holidayCoverageComplete ? "holiday-estimate-hint" : ""}`}>
                 {!currentPeriod.holidayCoverageComplete
                   ? <button onClick={() => setView("settings")} title="前往设置更新中国大陆节假日">
-                      节假日尚未完整获取，工作日与发薪日暂为估算 <ChevronRight size={11} />
+                      {data.settings.payroll.holidayAdjustment === "none"
+                        ? "节假日尚未完整获取，工作日与参考日薪暂为估算"
+                        : "节假日尚未完整获取，工作日与发薪日暂为估算"} <ChevronRight size={11} />
                     </button>
                   : summary.status === "completed"
                   ? "下班后停止计薪 · 跨天后可重新开始"
@@ -629,7 +631,7 @@ function App() {
               <button
                 className={`countdown-card payday-shortcut ${nextPayday?.daysUntil === 0 ? "is-today" : ""} ${!nextPayday ? "is-pending" : ""}`}
                 title={nextPayday
-                  ? `下次发薪 ${nextPayday.actualPayday} · 对应计薪周期：${periodRange(nextPayday)}${nextPayday.holidayCoverageComplete ? "" : " · 节假日数据未完整获取，日期暂为估算"}`
+                  ? `下次发薪 ${nextPayday.actualPayday} · 对应计薪周期：${periodRange(nextPayday)}${data.settings.payroll.holidayAdjustment === "none" ? " · 按计划日期发薪，节假日和休息日不调整" : nextPayday.holidayCoverageComplete ? "" : " · 节假日数据未完整获取，日期暂为估算"}`
                   : "暂无可用发薪日期，查看发薪安排"}
                 onClick={() => openPayroll(nextPayday?.start)}
               >
@@ -640,7 +642,7 @@ function App() {
                 <span className="countdown-content">
                   <span className="countdown-detail">
                     <span>{nextPayday ? shortDate(nextPayday.actualPayday!) : "检查发薪安排"}</span>
-                    <small>{nextPayday ? nextPayday.holidayCoverageComplete ? "按发薪规则调整" : "日期暂为估算" : "暂无可用日期"}</small>
+                    <small>{nextPayday ? data.settings.payroll.holidayAdjustment === "none" ? "按计划日期发薪" : nextPayday.holidayCoverageComplete ? "按发薪规则调整" : "日期暂为估算" : "暂无可用日期"}</small>
                   </span>
                   <strong className="countdown-number">
                     {!nextPayday ? "待设置" : nextPayday.daysUntil === 0 ? "今天发薪" : <>{nextPayday.daysUntil}<small>天</small></>}
@@ -875,6 +877,13 @@ function SettingsPanel({
   }, []);
   const patch = (value: Partial<Settings>) =>
     setDraft((current) => ({ ...current, ...value }));
+  const weeklyRestLabel = (day: number): string | null => {
+    const doubleRest = draft.doubleRestDays.includes(day);
+    const singleRest = draft.restDay === day;
+    if (draft.scheduleMode === "double") return doubleRest ? "休息日" : null;
+    if (draft.scheduleMode === "single") return singleRest ? "休息日" : null;
+    return doubleRest && singleRest ? "每周休" : doubleRest ? "双休周休" : singleRest ? "单休周休" : null;
+  };
   const save = () => {
     const issues = validateSettings(draft);
     setErrors(issues);
@@ -912,6 +921,7 @@ function SettingsPanel({
           <div className="segmented">
             {(["double", "single", "alternate"] as const).map((mode) => (
               <button
+                aria-label={modeNames[mode]}
                 className={draft.scheduleMode === mode ? "active" : ""}
                 key={mode}
                 onClick={() => patch({ scheduleMode: mode })}
@@ -922,6 +932,38 @@ function SettingsPanel({
             ))}
           </div>
         </Field>
+        {draft.scheduleMode !== "single" && (
+          <div className="field weekly-rest-field">
+            <span>{draft.scheduleMode === "alternate" ? "双休周的休息日" : "每周休息日"}</span>
+            <div className="weekly-rest-picker" role="group" aria-label="双休日设置">
+              {[1, 2, 3, 4, 5, 6, 0].map((day) => {
+                const selected = draft.doubleRestDays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    aria-label={`双休日 周${weekdays[day]}`}
+                    aria-pressed={selected}
+                    className={selected ? "selected" : ""}
+                    onClick={() => patch({ doubleRestDays: selected
+                      ? draft.doubleRestDays.filter((value) => value !== day)
+                      : [...draft.doubleRestDays, day] })}
+                  >
+                    <span>周{weekdays[day]}</span>
+                    <small aria-hidden="true">{selected ? "休" : "·"}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="weekly-rest-presets">
+              <button onClick={() => patch({ doubleRestDays: [6, 0] })}>周六、周日休息</button>
+              <button onClick={() => patch({ doubleRestDays: [1, 2] })}>周一、周二休息</button>
+              <span className={draft.doubleRestDays.length === 2 ? "" : "incomplete"} aria-live="polite">
+                已选 {draft.doubleRestDays.length}/2 天
+              </span>
+            </div>
+            <small>请选择两个不同的休息日，可以不连续；公共假期和日历中的手动调整优先。</small>
+          </div>
+        )}
         {draft.scheduleMode !== "double" && (
           <Field
             label={
@@ -931,6 +973,7 @@ function SettingsPanel({
             }
           >
             <select
+              aria-label="单休休息日"
               value={draft.restDay}
               onChange={(e) => patch({ restDay: Number(e.target.value) })}
             >
@@ -945,7 +988,7 @@ function SettingsPanel({
         {draft.scheduleMode === "alternate" && (
           <Field
             label="双休周的周一"
-            hint="这周休六、日，下一周按单休计算，依次交替。"
+            hint="基准周按上方双休日休息，下一周按单休设置，依次交替。"
           >
             <input
               type="date"
@@ -985,7 +1028,7 @@ function SettingsPanel({
           <Clock3 size={15} />
           每周上下班时间
         </h2>
-        <p className="group-hint">可单独设置每一天，例如周三 18:00 下班。</p>
+        <p className="group-hint">可单独设置每一天；周休标记随上方选择变化。</p>
         <div className="time-table">
           <div className="time-table-head">
             <span>星期</span>
@@ -993,8 +1036,11 @@ function SettingsPanel({
             <span>下班</span>
           </div>
           {[1, 2, 3, 4, 5, 6, 0].map((day) => (
-            <div className="time-row" key={day}>
-              <span>周{weekdays[day]}</span>
+            <div className={`time-row ${weeklyRestLabel(day) ? "is-weekly-rest" : ""}`} data-weekday={day} key={day}>
+              <span className="weekday-label">
+                周{weekdays[day]}
+                {weeklyRestLabel(day) && <small className="rest-day-badge">{weeklyRestLabel(day)}</small>}
+              </span>
               <input
                 aria-label={`周${weekdays[day]}上班时间`}
                 type="time"
@@ -1032,7 +1078,7 @@ function SettingsPanel({
           ))}
         </div>
         <p className="group-hint">
-          休息日不会计薪，调休后使用该星期的时间。暂不支持跨夜班次。
+          标记按周休规则显示，实际排班以日历为准；休息日的时间仍可编辑，补班时会使用。暂不支持跨夜班次。
         </p>
       </section>
       <MealSettings
@@ -1270,7 +1316,7 @@ function CalendarPanel({
                     ? "假"
                     : "班"
                   : d.date === dateKey(now)
-                    ? "今天"
+                    ? d.working ? "今天" : "今天休"
                     : d.working
                       ? "·"
                       : "休"}

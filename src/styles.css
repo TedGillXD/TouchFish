@@ -803,6 +803,46 @@ svg {
   box-shadow: 0 1px 4px #243e2c0d;
   font-weight: 550;
 }
+.weekly-rest-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+.weekly-rest-picker button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 0 6px;
+  border: 1px solid #e9edeb;
+  border-radius: 8px;
+  background: #fafbfa;
+  color: #929d96;
+  font-size: 10px;
+}
+.weekly-rest-picker button small { font-size: 8px; line-height: 10px; color: #bcc5bf; }
+.weekly-rest-picker button:hover { border-color: #bad4c7; }
+.weekly-rest-picker button.selected { background: #edf7f0; border-color: #a9cfb9; color: #25855c; }
+.weekly-rest-picker button.selected small { color: #42976b; }
+.weekly-rest-presets { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+.weekly-rest-presets button { padding: 2px 0; font-size: 9px; color: #609c7c; }
+.weekly-rest-presets button:hover { color: #237f56; }
+.weekly-rest-presets > span { margin-left: auto; white-space: nowrap; font-size: 9px; color: #99a69e; }
+.weekly-rest-presets > span.incomplete { color: #b18143; }
+.payday-policy button { min-width: 0; }
+.time-row .weekday-label { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.rest-day-badge {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 8px;
+  line-height: 11px;
+  font-weight: 450;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: #5f9477;
+  background: #eef5f0;
+}
 .group-hint {
   font-size: 10px;
   line-height: 1.7;
