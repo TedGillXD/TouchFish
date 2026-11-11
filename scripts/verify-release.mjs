@@ -48,7 +48,7 @@ function requiredAssets(version) {
       },
     ]),
     {
-      name: `TouchFish-${version}-linux-x64.AppImage`,
+      name: `TouchFish-${version}-linux-x86_64.AppImage`,
       platform: "linux",
       arch: "x64",
       kind: "appimage",

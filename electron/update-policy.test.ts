@@ -86,6 +86,35 @@ test("manifest requires exact platform/version filenames and both valid checksum
   );
 });
 
+test("Linux x64 selects the canonical x86_64 AppImage filename while preserving Electron's logical architecture", () => {
+  const linux = {
+    ...file,
+    name: "TouchFish-1.4.0-linux-x86_64.AppImage",
+    platform: "linux",
+    kind: "appimage",
+  };
+  const parsed = parseManifest({ ...manifest(), files: [linux] }, "1.4.0");
+  const selected = chooseReleaseFile(parsed, "linux", "x64");
+  assert.equal(selected?.name, linux.name);
+  assert.equal(selected?.arch, "x64");
+  assert.equal(chooseReleaseFile(parsed, "linux", "x86_64"), null);
+  assert.throws(() =>
+    parseManifest(
+      { ...manifest(), files: [{ ...linux, arch: "x86_64" }] },
+      "1.4.0",
+    ),
+  );
+  assert.throws(() =>
+    parseManifest(
+      {
+        ...manifest(),
+        files: [{ ...linux, name: "TouchFish-1.4.0-linux-x64.AppImage" }],
+      },
+      "1.4.0",
+    ),
+  );
+});
+
 test("GitHub redirects keep verified HTTPS and never allow credentials, loopback, or executable URL schemes", () => {
   assert.equal(
     trustedUpdateUrl(

@@ -107,7 +107,7 @@ export function parseManifest(
         : raw.platform === "darwin" && ["dmg", "zip"].includes(String(raw.kind))
           ? `TouchFish-${expectedVersion}-mac-${raw.arch}.${raw.kind}`
           : raw.platform === "linux" && raw.kind === "appimage"
-            ? `TouchFish-${expectedVersion}-linux-${raw.arch}.AppImage`
+            ? `TouchFish-${expectedVersion}-linux-${raw.arch === "x64" ? "x86_64" : raw.arch}.AppImage`
             : null;
     if (
       raw.name !== expectedName ||
