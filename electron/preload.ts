@@ -7,6 +7,7 @@ import type { BossKeyState } from "../src/boss-key-types";
 import type { MediaProvider, MediaTransportState } from "../src/media-types";
 import type { YouTubeBrowser, YouTubePlayerState } from "../src/youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "../src/bilibili-types";
+import type { BiliHistoryState } from "../src/bilibili-history-types";
 
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
@@ -62,6 +63,10 @@ contextBridge.exposeInMainWorld("touchFish", {
     onTransportState: (callback: (state: BiliTransportState) => void) => listen("youtube:transport-state", callback),
   },
   bilibili: {
+    getHistory: (): Promise<BiliHistoryState> => ipcRenderer.invoke("bilibili:history-get"),
+    removeHistory: (bvid: string): Promise<BiliHistoryState> => ipcRenderer.invoke("bilibili:history-remove", bvid),
+    clearHistory: (): Promise<BiliHistoryState> => ipcRenderer.invoke("bilibili:history-clear"),
+    onHistory: (callback: (state: BiliHistoryState) => void): (() => void) => listen("bilibili:history-state", callback),
     getAuth: (): Promise<BiliAuthState> => ipcRenderer.invoke("bilibili:auth"),
     createQr: (): Promise<BiliAuthState> => ipcRenderer.invoke("bilibili:qr"),
     cancelLogin: (): Promise<void> => ipcRenderer.invoke("bilibili:cancel-login"),

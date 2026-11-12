@@ -57,6 +57,42 @@
 .bili-now-playing > div { display: flex; align-items: center; gap: 14px; margin: 8px 0 0 21px; }
 .bili-now-playing .text-button { font-size: 9px; gap: 4px; }
 .bili-panel-note { font-size: 9px; color: #a3ada7; line-height: 1.9; margin: 14px 1px 0; }
+.bili-history { margin-top: 20px; border: 1px solid #e5ede8; border-radius: 13px; padding: 13px 12px 5px; background: #fff; }
+.bili-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bili-history-heading h2 { display: flex; align-items: center; gap: 6px; margin: 0; color: #566b5f; font-size: 11px; font-weight: 600; }
+.bili-history-heading h2 small { font-size: 9px; color: #99a99f; font-weight: 400; }
+.bili-history-heading > .text-button { font-size: 9px; gap: 4px; color: #8c9e93; padding: 3px 0 3px 5px; }
+.bili-history-heading > .text-button:hover:not(:disabled) { color: #b16c56; }
+.bili-history button:disabled { cursor: default; opacity: .5; }
+.bili-history-note { font-size: 9px; line-height: 1.8; color: #a1aea6; margin: 7px 0 8px; }
+.bili-history-list { list-style: none; margin: 0; padding: 0; max-height: 288px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #dfe8e2 transparent; }
+.bili-history-list.expanded { max-height: 360px; }
+.bili-history-item { display: flex; align-items: center; gap: 5px; border-top: 1px solid #f0f3f1; }
+.bili-history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 11px 5px 11px 0; text-align: left; border-radius: 7px; }
+.bili-history-open:hover:not(:disabled) .bili-history-title { color: #258d65; }
+.bili-history-open:focus-visible, .bili-history-delete:focus-visible { outline: 2px solid #79b99a; outline-offset: -2px; }
+.bili-history-title { font-size: 10px; font-weight: 500; color: #4c6456; line-height: 1.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+.bili-history-meta { width: 100%; min-width: 0; display: flex; gap: 8px; align-items: center; font-size: 8px; line-height: 1.5; color: #a2afa7; }
+.bili-history-meta > span:first-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.bili-history-owner { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bili-history-detail { display: flex; align-items: center; gap: 8px; color: #a4b0a8; font-size: 8px; line-height: 1.6; }
+.bili-history-detail time { font-variant-numeric: tabular-nums; }
+.bili-history-kind { display: inline-flex; align-items: center; gap: 3px; color: #97a99d; }
+.bili-history-kind.played { color: #6c9f83; }
+.bili-history-delete { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 30px; border-radius: 7px; color: #a4b1a9; }
+.bili-history-delete:hover:not(:disabled) { color: #b16c56; background: #fcf3ef; }
+.bili-history-expand.text-button { display: flex; justify-content: center; width: 100%; padding: 10px 0 8px; gap: 4px; font-size: 9px; color: #86a491; border-top: 1px solid #f0f3f1; }
+.bili-history-empty { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 18px 0 19px; font-size: 9px; line-height: 1.8; color: #adbbb1; }
+div.bili-history-empty { flex-direction: column; gap: 4px; }
+.bili-history-empty > strong { color: #99aa9e; font-size: 10px; font-weight: 500; margin-top: 3px; }
+.bili-history-confirm { margin: 10px 0; padding: 11px; background: #fcf8f3; border: 1px solid #f0e5d9; border-radius: 9px; color: #a47951; font-size: 10px; }
+.bili-history-confirm > p { margin: 6px 0 9px; font-size: 9px; line-height: 1.7; color: #b29a82; }
+.bili-history-confirm > div { display: flex; justify-content: flex-end; align-items: center; gap: 13px; }
+.bili-history-confirm .text-button { font-size: 9px; color: #9c9b8d; }
+.bili-history-confirm-delete { display: inline-flex; gap: 4px; align-items: center; font-size: 9px; padding: 6px 9px; border-radius: 6px; background: #b97b55; color: #fff; }
+.bili-history-error { display: flex; align-items: center; gap: 8px; color: #aa7c4e; background: #fcf8f2; border-radius: 7px; padding: 8px; margin: 8px 0; font-size: 9px; line-height: 1.7; }
+.bili-history-error > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bili-history-error .text-button { flex-shrink: 0; font-size: 9px; color: #9e8c6e; }
 .bili-spinning { animation: bili-spin 1s linear infinite; }
 @keyframes bili-spin { to { transform: rotate(360deg); } }
 

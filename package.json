@@ -13,7 +13,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/core.test.ts src/holidays.test.ts src/payroll.test.ts electron/update-policy.test.ts electron/floating-layout.test.ts electron/bilibili-policy.test.ts electron/bilibili-transport.test.ts electron/boss-key.test.ts electron/youtube-policy.test.ts",
+    "test": "tsx --test src/core.test.ts src/holidays.test.ts src/payroll.test.ts electron/update-policy.test.ts electron/floating-layout.test.ts electron/bilibili-policy.test.ts electron/bilibili-transport.test.ts electron/bilibili-history.test.ts electron/boss-key.test.ts electron/youtube-policy.test.ts",
     "build": "npm run typecheck && vite build && node scripts/build-electron.mjs",
     "start": "electron .",
     "dist:win": "npm run build && electron-builder --win",
@@ -23,6 +23,7 @@
     "test:floating": "npm run build && node scripts/floating-smoke.mjs",
     "test:holidays": "npm run build && node scripts/holiday-service-smoke.mjs && node scripts/holiday-ui-smoke.mjs",
     "test:bilibili": "npm run build && node scripts/bilibili-service-smoke.mjs && node scripts/bilibili-smoke.mjs",
+    "test:bilibili-history": "npm run build && node scripts/bilibili-history-smoke.mjs",
     "test:boss-key": "npm run build && node scripts/boss-key-smoke.mjs",
     "test:youtube": "npm run build && node scripts/youtube-extension-smoke.mjs && node scripts/youtube-bridge-smoke.mjs && node scripts/youtube-ui-smoke.mjs",
     "test:update-proxy": "node scripts/update-proxy-smoke.mjs"

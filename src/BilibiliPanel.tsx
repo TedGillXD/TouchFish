@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, AudioLines, ExternalLink, LoaderCircle, LogOut, Play, QrCode, RefreshCw, Search, Square, TvMinimal } from "lucide-react";
+import { ArrowLeft, AudioLines, ChevronDown, ChevronUp, ExternalLink, History, LoaderCircle, LogOut, Play, QrCode, RefreshCw, Search, Square, Trash2, TvMinimal } from "lucide-react";
 import type { BiliAuthState, BiliMode, BiliPlayerState, BiliVideo } from "./bilibili-types";
+import type { BiliHistoryEntry, BiliHistoryState } from "./bilibili-history-types";
 import "./bilibili.css";
 
 const initialAuth: BiliAuthState = {
@@ -19,6 +20,21 @@ function duration(seconds: number): string {
     ? `${Math.floor(value / 3600)}:${String(Math.floor(value / 60) % 60).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`
     : `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
 }
+function historyTime(timestamp: number, now: number): string {
+  const date = new Date(timestamp);
+  if (timestamp <= 0 || !Number.isFinite(date.getTime())) return "时间未知";
+  const elapsed = Math.max(0, now - timestamp);
+  if (elapsed < 60_000) return "刚刚";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
+  const today = new Date(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sameDay = (other: Date) => date.getFullYear() === other.getFullYear() && date.getMonth() === other.getMonth() && date.getDate() === other.getDate();
+  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (sameDay(today)) return `今天 ${time}`;
+  if (sameDay(yesterday)) return `昨天 ${time}`;
+  return date.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+}
 
 export default function BilibiliPanel({ onBack }: { onBack: () => void }) {
   const api = window.touchFish?.bilibili;
@@ -32,9 +48,17 @@ export default function BilibiliPanel({ onBack }: { onBack: () => void }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [history, setHistory] = useState<BiliHistoryState>({ entries: [], error: null });
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [historyBusy, setHistoryBusy] = useState<string | null>(null);
+  const [historyReload, setHistoryReload] = useState(0);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
   const [now, setNow] = useState(Date.now());
   const mounted = useRef(false);
   const lookupRevision = useRef(0);
+  const historyRevision = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -66,10 +90,36 @@ export default function BilibiliPanel({ onBack }: { onBack: () => void }) {
   }, [api]);
 
   useEffect(() => {
-    if (!auth.qrDataUrl || auth.loggedIn) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    if (!api) { setHistoryLoading(false); return; }
+    let active = true;
+    const accept = (next: BiliHistoryState) => {
+      if (!active) return;
+      setHistory(next);
+      setHistoryLoading(false);
+      setHistoryError("");
+      if (!next.entries.length) setClearHistoryConfirm(false);
+    };
+    const offHistory = api.onHistory(next => { historyRevision.current++; accept(next); });
+    const revision = historyRevision.current;
+    setHistoryLoading(true);
+    setHistoryError("");
+    void api.getHistory().then(next => {
+      if (revision === historyRevision.current) accept(next);
+    }).catch(cause => {
+      if (active && revision === historyRevision.current) {
+        setHistoryLoading(false);
+        setHistoryError(friendlyError(cause, "历史记录读取失败，请重试。"));
+      }
+    });
+    return () => { active = false; offHistory(); };
+  }, [api, historyReload]);
+
+  useEffect(() => {
+    const qrActive = !!auth.qrDataUrl && !auth.loggedIn;
+    if (!qrActive && !history.entries.length) return;
+    const timer = setInterval(() => setNow(Date.now()), qrActive ? 1000 : 30_000);
     return () => clearInterval(timer);
-  }, [auth.qrDataUrl, auth.loggedIn]);
+  }, [auth.qrDataUrl, auth.loggedIn, history.entries.length]);
 
   const authenticate = async () => {
     if (!api || authBusy) return;
@@ -91,23 +141,43 @@ export default function BilibiliPanel({ onBack }: { onBack: () => void }) {
     catch (cause) { if (mounted.current) setError(friendlyError(cause, "退出登录失败，请重试。")); }
     finally { if (mounted.current) setAuthBusy(false); }
   };
-  const lookup = async () => {
-    if (!api || !input.trim()) return;
+  const lookup = async (value = input, preferredCid?: number | null) => {
+    if (!api || !value.trim()) return;
     const request = ++lookupRevision.current;
     setLooking(true);
     setVideo(null);
     setError("");
     setNotice("");
     try {
-      const result = await api.getVideo(input.trim());
+      const result = await api.getVideo(value.trim());
       if (mounted.current && request === lookupRevision.current) {
         setVideo(result);
-        setCid(result.pages[0]?.cid);
+        setCid(result.pages.some(page => page.cid === preferredCid) ? preferredCid! : result.pages[0]?.cid);
+        setNow(Date.now());
       }
     } catch (cause) {
       if (mounted.current && request === lookupRevision.current) setError(friendlyError(cause, "无法读取视频，请核对 BV 号后重试。"));
     } finally {
       if (mounted.current && request === lookupRevision.current) setLooking(false);
+    }
+  };
+  const reopenHistory = (entry: BiliHistoryEntry) => {
+    setInput(entry.bvid);
+    void lookup(entry.bvid, entry.lastCid);
+  };
+  const manageHistory = async (bvid?: string) => {
+    if (!api || historyBusy) return;
+    const revision = historyRevision.current;
+    setHistoryBusy(bvid ?? "clear");
+    setHistoryError("");
+    try {
+      const next = bvid ? await api.removeHistory(bvid) : await api.clearHistory();
+      if (mounted.current && historyRevision.current === revision) setHistory(next);
+      if (mounted.current && !bvid) setClearHistoryConfirm(false);
+    } catch (cause) {
+      if (mounted.current) setHistoryError(friendlyError(cause, bvid ? "记录删除失败，请重试。" : "历史记录清空失败，请重试。"));
+    } finally {
+      if (mounted.current) setHistoryBusy(null);
     }
   };
   const play = async (mode: BiliMode) => {
@@ -191,6 +261,27 @@ export default function BilibiliPanel({ onBack }: { onBack: () => void }) {
       {error && <div className="bili-panel-error" role="alert">{error}</div>}
       {notice && <p className="bili-panel-notice" role="status">{notice}</p>}
       {player.open && <section className="bili-now-playing" aria-label="已打开的播放器"><span><AudioLines size={14} /><strong>{player.title}</strong></span><div><button className="text-button" onClick={() => api?.showPlayer()}><ExternalLink size={12} />打开小窗</button><button className="text-button" onClick={() => api?.closePlayer()}><Square size={11} />停止播放</button></div></section>}
+      <section className="bili-history" aria-label="B站历史记录" aria-busy={!!historyBusy || historyLoading}>
+        <div className="bili-history-heading"><h2><History size={14} />历史记录{history.entries.length > 0 && <small>{history.entries.length}</small>}</h2><button className="text-button" disabled={!api || historyLoading || !!historyBusy || (!history.entries.length && !history.error)} onClick={() => setClearHistoryConfirm(true)}><Trash2 size={12} />清空记录</button></div>
+        <p className="bili-history-note">搜索和播放过的 BV 号保存在本机，点击记录可再次查找。</p>
+        {clearHistoryConfirm && <div className="bili-history-confirm" role="group" aria-label="清空历史记录确认"><span>确认清空全部记录？</span><p>清空后无法恢复，正在播放的视频不受影响。</p><div><button className="text-button" disabled={!!historyBusy} onClick={() => setClearHistoryConfirm(false)}>取消清空</button><button className="bili-history-confirm-delete" disabled={!!historyBusy} onClick={() => void manageHistory()}>{historyBusy === "clear" ? <LoaderCircle className="bili-spinning" size={12} /> : <Trash2 size={12} />}确认清空</button></div></div>}
+        {(historyError || history.error) && <div className="bili-history-error" role="alert"><span>{historyError || history.error}</span><button className="text-button" disabled={historyLoading || !!historyBusy} onClick={() => setHistoryReload(value => value + 1)}>重新读取</button></div>}
+        {historyLoading ? <p className="bili-history-empty" role="status"><LoaderCircle size={13} className="bili-spinning" />正在读取记录…</p> : history.entries.length ? <>
+          <ul className={`bili-history-list ${historyExpanded ? "expanded" : ""}`}>
+            {(historyExpanded ? history.entries : history.entries.slice(0, 6)).map(entry => {
+              const timestamp = Math.max(entry.lastSearchedAt ?? 0, entry.lastPlayedAt ?? 0);
+              const date = new Date(timestamp);
+              const hasDate = timestamp > 0 && Number.isFinite(date.getTime());
+              const playedRecently = entry.lastPlayedAt !== null && entry.lastPlayedAt >= (entry.lastSearchedAt ?? 0);
+              return <li className="bili-history-item" data-bvid={entry.bvid} key={entry.bvid}>
+                <button className="bili-history-open" aria-label={`重新查找 ${entry.bvid}`} title={entry.title || entry.bvid} disabled={!api || !!historyBusy} onClick={() => reopenHistory(entry)}><span className="bili-history-title">{entry.title || entry.bvid}</span><span className="bili-history-meta"><span>{entry.bvid}</span>{entry.owner && <span className="bili-history-owner">{entry.owner}</span>}</span><span className="bili-history-detail"><span className={`bili-history-kind ${entry.lastMode ? "played" : ""}`}>{entry.lastMode === "audio" ? <AudioLines size={10} /> : entry.lastMode === "video" ? <Play size={10} /> : <Search size={10} />}{entry.lastMode === "audio" ? "听过" : entry.lastMode === "video" ? "看过" : "已搜索"}</span><time dateTime={hasDate ? date.toISOString() : undefined} title={hasDate ? date.toLocaleString("zh-CN") : undefined}>{playedRecently ? "播放" : "搜索"} · {historyTime(timestamp, now)}</time></span></button>
+                <button className="bili-history-delete" aria-label={`删除记录 ${entry.bvid}`} title="删除这条记录" disabled={!api || !!historyBusy} onClick={() => void manageHistory(entry.bvid)}>{historyBusy === entry.bvid ? <LoaderCircle size={13} className="bili-spinning" /> : <Trash2 size={13} />}</button>
+              </li>;
+            })}
+          </ul>
+          {history.entries.length > 6 && <button className="bili-history-expand text-button" onClick={() => setHistoryExpanded(value => !value)}>{historyExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}{historyExpanded ? "收起记录" : `查看全部 ${history.entries.length} 条`}</button>}
+        </> : <div className="bili-history-empty"><History size={17} /><strong>还没有记录</strong><span>搜索视频后会自动保存，重启应用后仍可查看。</span></div>}
+      </section>
       <p className="bili-panel-note">音频在小窗中持续播放。视频窗不置顶，鼠标移入显示控制，边缘可自由缩放。</p>
     </div>
   );

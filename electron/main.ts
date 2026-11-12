@@ -21,6 +21,8 @@ import { createFloatingController } from "./floating-window";
 import { createHolidayService } from "./holiday-service";
 import { createBilibiliService } from "./bilibili-service";
 import { createBilibiliWindow } from "./bilibili-window";
+import { createBilibiliHistory } from "./bilibili-history";
+import { normalizeBvid } from "./bilibili-policy";
 import { createBossKeyController } from "./boss-key";
 import { createYouTubeWindow } from "./youtube-window";
 import type { BiliMode, BiliPlayback, BiliPlayRequest, BiliTransportState } from "../src/bilibili-types";
@@ -61,6 +63,9 @@ let updater: ReturnType<typeof createUpdaterController> | null = null;
 let floating: Awaited<ReturnType<typeof createFloatingController>> | null = null;
 let holidays: Awaited<ReturnType<typeof createHolidayService>> | null = null;
 let bilibili: Awaited<ReturnType<typeof createBilibiliService>> | null = null;
+let biliHistory: Awaited<ReturnType<typeof createBilibiliHistory>> | null = null;
+let historyClearVersion = 0;
+const historyDeletionVersions = new Map<string, number>();
 let player: ReturnType<typeof createBilibiliWindow> | null = null;
 let playbackRequest = 0;
 let youtube: Awaited<ReturnType<typeof createYouTubeWindow>> | null = null;
@@ -162,6 +167,11 @@ function mediaController() {
   return bilibili;
 }
 
+function historyController() {
+  if (!biliHistory) throw new Error("视频记录暂未就绪，请稍后重试。");
+  return biliHistory;
+}
+
 function assertMediaSender(event: IpcMainInvokeEvent): void {
   if (!trustedSender(event) && !player?.isSender(event))
     throw new Error("无法识别的播放器请求。");
@@ -210,11 +220,17 @@ async function playBilibili(input: unknown, activate = true): Promise<BiliPlayba
     (request.quality !== undefined && (!Number.isInteger(request.quality) || request.quality < 1 || request.quality > 200)))
     throw new Error("播放参数无效，请检查 BV 号、分 P 和画质。");
   const revision = ++playbackRequest;
+  const bvid = normalizeBvid(request.bvid);
+  const clearVersion = historyClearVersion;
+  const deletionVersion = historyDeletionVersions.get(bvid) ?? 0;
   const playback = await mediaController().resolvePlayback(request);
   if (revision !== playbackRequest) throw new Error("已切换至另一个播放请求。");
   assertLeisureAvailable();
   activeProvider = "bilibili";
   await player!.open(playback, activate);
+  // Deleting a record while its media request is in flight must stay deleted.
+  if (clearVersion === historyClearVersion && deletionVersion === (historyDeletionVersions.get(bvid) ?? 0))
+    await biliHistory?.recordPlay(playback, activate).catch(() => {});
   return playback;
 }
 
@@ -478,6 +494,7 @@ async function requestQuit(): Promise<void> {
   await writeQueue;
   await holidays?.flush().catch(() => {});
   await bilibili?.flush().catch(() => {});
+  await biliHistory?.flush().catch(() => {});
   await youtube?.pauseAndHide().catch(() => {});
   await youtube?.flush().catch(() => {});
   await bossKey?.flush().catch(() => {});
@@ -553,6 +570,19 @@ function registerIpc(): void {
     ["youtube:close", () => youtubeController().close()],
   ] as const) ipcMain.on(channel, event => { if (trustedSender(event)) { try { action(); } catch { /* UI obtains the next state. */ } } });
   ipcMain.handle("bilibili:auth", (event) => { assertMediaSender(event); return mediaController().getAuth(); });
+  ipcMain.handle("bilibili:history-get", event => { assertTrusted(event); return historyController().getState(); });
+  ipcMain.handle("bilibili:history-remove", (event, input: unknown) => {
+    assertTrusted(event);
+    const bvid = normalizeBvid(input);
+    historyDeletionVersions.set(bvid, (historyDeletionVersions.get(bvid) ?? 0) + 1);
+    return historyController().remove(bvid);
+  });
+  ipcMain.handle("bilibili:history-clear", event => {
+    assertTrusted(event);
+    historyClearVersion++;
+    historyDeletionVersions.clear();
+    return historyController().clear();
+  });
   ipcMain.handle("bilibili:qr", (event) => { assertTrusted(event); assertLeisureAvailable(); return mediaController().createQr(); });
   ipcMain.handle("bilibili:cancel-login", (event) => { assertTrusted(event); mediaController().cancelLogin(); });
   ipcMain.handle("bilibili:logout", async (event) => {
@@ -561,10 +591,14 @@ function registerIpc(): void {
     player?.close();
     return mediaController().logout();
   });
-  ipcMain.handle("bilibili:video", (event, input: unknown) => {
+  ipcMain.handle("bilibili:video", async (event, input: unknown) => {
     assertMediaSender(event);
     if (typeof input !== "string" || input.length > 512) throw new Error("请输入有效的 BV 号。");
-    return mediaController().getVideo(input);
+    const bvid = normalizeBvid(input);
+    if (trustedSender(event)) await biliHistory?.recordSearch(bvid).catch(() => {});
+    const video = await mediaController().getVideo(bvid);
+    if (trustedSender(event)) await biliHistory?.recordVideo(video).catch(() => {});
+    return video;
   });
   ipcMain.handle("bilibili:play", (event, request: unknown) => { assertMediaSender(event); return playBilibili(request, trustedSender(event)); });
   ipcMain.handle("bilibili:playback", (event) => { assertMediaSender(event); return player?.getPlayback() ?? null; });
@@ -850,6 +884,10 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (process.platform === "darwin") app.dock?.hide();
+      biliHistory = await createBilibiliHistory({
+        directory: app.getPath("userData"),
+        onState: state => sendMain("bilibili:history-state", state),
+      });
       bilibili = await createBilibiliService({ onAuth: state => broadcastMedia("bilibili:auth-state", state) });
       bilibili.registerMediaProtocol(session.defaultSession);
       player = createBilibiliWindow({
@@ -904,6 +942,7 @@ if (!app.requestSingleInstanceLock()) {
         beforeInstall: async () => {
           await writeQueue;
           await bilibili?.flush();
+          await biliHistory?.flush().catch(() => {});
           await bossKey?.flush();
           await youtube?.pauseAndHide();
           await youtube?.flush();

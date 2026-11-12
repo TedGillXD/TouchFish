@@ -6,6 +6,7 @@ import type { BossKeyApi } from "./boss-key-types";
 import type { MediaControlApi } from "./media-types";
 import type { YouTubeBridge } from "./youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "./bilibili-types";
+import type { BiliHistoryState } from "./bilibili-history-types";
 
 declare global {
   interface Window {
@@ -24,6 +25,10 @@ declare global {
       media: MediaControlApi;
       youtube: YouTubeBridge;
       bilibili: {
+        getHistory(): Promise<BiliHistoryState>;
+        removeHistory(bvid: string): Promise<BiliHistoryState>;
+        clearHistory(): Promise<BiliHistoryState>;
+        onHistory(callback: (state: BiliHistoryState) => void): () => void;
         getAuth(): Promise<BiliAuthState>;
         createQr(): Promise<BiliAuthState>;
         cancelLogin(): Promise<void>;

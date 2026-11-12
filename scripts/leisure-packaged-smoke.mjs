@@ -1,5 +1,5 @@
 import { _electron as electron, expect } from "@playwright/test";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { seedHolidayCache } from "./test-holiday-cache.mjs";
 
@@ -26,10 +26,14 @@ try {
   await expect.poll(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible() || window.isMinimized()))).toBe(true);
   await main.evaluate(() => window.touchFish.bossKey.restore());
   await expect.poll(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some(window => window.webContents.getURL().endsWith("/index.html") && window.isVisible() && !window.isMinimized()))).toBe(true);
+  expect((await main.evaluate(() => window.touchFish.bilibili.getHistory())).entries).toEqual([]);
+  expect((await main.evaluate(() => window.touchFish.bilibili.clearHistory())).entries).toEqual([]);
+  expect(JSON.parse(await readFile(join(userData, "bilibili-history.json"), "utf8")).entries).toEqual([]);
   await main.getByRole("button", { name: "摸鱼", exact: true }).click();
+  await expect(main.getByRole("region", { name: "B站历史记录", exact: true }).getByText("还没有记录", { exact: true })).toBeVisible();
   await main.getByRole("tab", { name: "YouTube", exact: true }).click();
   await expect(main.getByRole("region", { name: "YouTube浏览器连接", exact: true }).getByText("未连接", { exact: true })).toBeVisible();
-  console.log("PASS: packaged startup, companion resources, disconnected YouTube service, real shortcut registration, all-window conceal/restore, and YouTube route.");
+  console.log("PASS: packaged startup, companion resources, disconnected YouTube service, real shortcut registration, all-window conceal/restore, Bili history IPC/persistence/empty state, and YouTube route.");
 } finally {
   await desktop?.evaluate(({ app }) => app.exit(0)).catch(() => {});
   await desktop?.close().catch(() => {});
