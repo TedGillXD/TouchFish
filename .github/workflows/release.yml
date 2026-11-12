@@ -126,6 +126,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/bilibili-smoke.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify persistent video history and boss key
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/bilibili-history-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/boss-key-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package native installers and update metadata
         run: npx electron-builder ${{ matrix.target }} --publish never
         env:
@@ -191,12 +199,15 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          ## 更新内容
+          ## 1.5.3 更新内容
 
-          - Windows 悬浮窗新增 B 站播放／暂停按钮，收起与展开时均可操作，支持视频和听音频。
-          - 媒体按钮与播放器状态同步；最小化后也可控制，不会弹回播放器或影响工资计时，关闭播放器后恢复原悬浮窗宽度。
-          - 修复 B 站官方 `account.bilibili.com` 新版扫码地址被误拒绝的问题，保留旧地址兼容及受信任地址校验。
-          - 保留 1.5.1 的点击即计薪和结束补齐修复，以及三端安装包、系统代理更新与本地计薪记录。
+          - 新增 B 站搜索与播放历史：有效 BV 号在搜索后即保存在本机，无需登录或先播放；同一视频合并为一条，补充标题、UP 主及最近搜索／播放时间，重启后仍可查看。
+          - 历史记录支持点击重新查找、恢复上次选择的分 P、单条删除及确认清空。删除不会停止当前播放，也不会被迟到的网络回包或播放器后台刷新重新加回。
+          - 新增可配置的全局老板键：Windows / Linux 默认 `Ctrl + Alt + B`，macOS 默认 `⌘ + ⌥ + B`。一键暂停摸鱼媒体并收起应用相关窗口，工资继续计时；从托盘恢复窗口后保持暂停。
+          - 老板键冲突或保存失败时保留原可用快捷键；重复按键仍保持收起，加载中的播放请求也不会在随后弹回窗口。
+          - 保留 1.5.2 的悬浮窗播放控制与 B 站新版扫码地址修复，以及点击即计薪、结束补齐、三端安装包和系统代理更新。
+
+          YouTube 浏览器扩展入口仍属实验功能，需在 Chrome / Edge 手动加载应用附带的配套扩展并连接浏览器。真实账号登录和 YouTube 网络播放尚未完成实机验收。
 
           ## 安装包
 

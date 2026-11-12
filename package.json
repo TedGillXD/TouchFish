@@ -2,7 +2,7 @@
   "name": "touchfish-clock",
   "productName": "摸鱼时钟",
   "desktopName": "com.touchfish.clock.desktop",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "description": "A quiet desktop companion for your working day.",
   "author": "TouchFish",
