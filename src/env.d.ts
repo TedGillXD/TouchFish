@@ -2,6 +2,9 @@ import type { AppData } from "./core";
 import type { UpdateState } from "./update-types";
 import type { FloatingState } from "./floating-types";
 import type { HolidayState } from "./holiday-types";
+import type { BossKeyApi } from "./boss-key-types";
+import type { MediaControlApi } from "./media-types";
+import type { YouTubeBridge } from "./youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "./bilibili-types";
 
 declare global {
@@ -17,6 +20,9 @@ declare global {
       setLogin(enabled: boolean): Promise<void>;
       onSettings(callback: () => void): () => void;
       updateStatus?(message: string): void;
+      bossKey: BossKeyApi;
+      media: MediaControlApi;
+      youtube: YouTubeBridge;
       bilibili: {
         getAuth(): Promise<BiliAuthState>;
         createQr(): Promise<BiliAuthState>;

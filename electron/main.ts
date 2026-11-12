@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -20,7 +21,12 @@ import { createFloatingController } from "./floating-window";
 import { createHolidayService } from "./holiday-service";
 import { createBilibiliService } from "./bilibili-service";
 import { createBilibiliWindow } from "./bilibili-window";
+import { createBossKeyController } from "./boss-key";
+import { createYouTubeWindow } from "./youtube-window";
 import type { BiliMode, BiliPlayback, BiliPlayRequest, BiliTransportState } from "../src/bilibili-types";
+import type { BossKeyState } from "../src/boss-key-types";
+import type { MediaProvider, MediaTransportState } from "../src/media-types";
+import type { YouTubeBrowser, YouTubePlayerState } from "../src/youtube-types";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "touchfish-media",
@@ -39,6 +45,7 @@ if (process.env.TOUCHFISH_USER_DATA)
   app.setPath("userData", resolve(process.env.TOUCHFISH_USER_DATA));
 app.setName("摸鱼时钟");
 app.setAppUserModelId("com.touchfish.clock");
+if (process.platform === "linux") app.setDesktopName("com.touchfish.clock.desktop");
 
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -56,6 +63,99 @@ let holidays: Awaited<ReturnType<typeof createHolidayService>> | null = null;
 let bilibili: Awaited<ReturnType<typeof createBilibiliService>> | null = null;
 let player: ReturnType<typeof createBilibiliWindow> | null = null;
 let playbackRequest = 0;
+let youtube: Awaited<ReturnType<typeof createYouTubeWindow>> | null = null;
+let bossKey: Awaited<ReturnType<typeof createBossKeyController>> | null = null;
+let leisureSuppressed = false;
+let leisureEpoch = 0;
+let concealedMain: boolean | null = null;
+let activeProvider: MediaProvider | null = null;
+let lastBiliIntent = false;
+let lastYouTubeIntent = false;
+
+const extensionDirectory = app.isPackaged
+  ? join(process.resourcesPath, "youtube-companion")
+  : join(root, "extensions", "youtube-companion");
+
+function currentMediaState(): MediaTransportState {
+  const bili = player?.getTransportState();
+  const yt = youtube?.getTransportState();
+  const provider = activeProvider === "youtube" && yt?.open ? "youtube"
+    : activeProvider === "bilibili" && bili?.open ? "bilibili"
+      : yt?.open ? "youtube" : bili?.open ? "bilibili" : null;
+  activeProvider = provider;
+  const state = provider === "youtube" ? yt : provider === "bilibili" ? bili : null;
+  return state ? { ...state, provider } : {
+    provider: null, open: false, revision: 0, ready: false, playing: false,
+    playIntent: false, buffering: false, ended: false, failed: false,
+  };
+}
+
+function sendCompanion(channel: string, value: unknown) {
+  const companion = floating?.getWindow();
+  if (companion && !companion.isDestroyed() && !companion.webContents.isDestroyed()) {
+    try { companion.webContents.send(channel, value); } catch { /* Reload reads a snapshot. */ }
+  }
+}
+
+function broadcastCurrentMedia() {
+  const state = currentMediaState();
+  floating?.setMediaActive(state.open);
+  broadcastMedia("media:transport-state", state);
+  sendCompanion("media:transport-state", state);
+}
+
+function onYouTubeState(state: YouTubePlayerState) {
+  sendMain("youtube:state", state);
+  broadcastCurrentMedia();
+}
+
+function onYouTubeTransport(state: BiliTransportState) {
+  if (state.playIntent && !lastYouTubeIntent && !leisureSuppressed) {
+    activeProvider = "youtube";
+    const other = player?.getTransportState();
+    if (other?.ready && other.playIntent) void player?.setPlaying(false, other.revision).catch(() => {});
+  }
+  lastYouTubeIntent = state.playIntent;
+  sendMain("youtube:transport-state", state);
+  broadcastCurrentMedia();
+}
+
+async function concealLeisure(): Promise<void> {
+  leisureSuppressed = true;
+  leisureEpoch++;
+  playbackRequest++;
+  if (concealedMain === null) concealedMain = win?.isVisible() ?? false;
+  win?.hide();
+  floating?.setConcealed(true);
+  bilibili?.cancelLogin();
+  const results = await Promise.allSettled([player?.pauseAndHide(), youtube?.pauseAndHide()]);
+  if (results.some(result => result.status === "rejected"))
+    throw new Error("部分媒体未确认暂停，窗口已要求收起。");
+}
+
+function repeatConcealLeisure(): void {
+  leisureSuppressed = true;
+  leisureEpoch++;
+  playbackRequest++;
+  win?.hide();
+  floating?.setConcealed(true);
+  void player?.pauseAndHide().catch(() => {});
+  void youtube?.pauseAndHide().catch(() => {});
+}
+
+async function restoreLeisure(): Promise<void> {
+  const epoch = leisureEpoch;
+  await Promise.all([player?.restorePaused(), youtube?.restorePaused()]);
+  if (epoch !== leisureEpoch) return;
+  leisureSuppressed = false;
+  floating?.setConcealed(false);
+  if (concealedMain) showWindow();
+  concealedMain = null;
+}
+
+function assertLeisureAvailable() {
+  if (leisureSuppressed) throw new Error("摸鱼窗口已收起，请先从托盘恢复窗口。");
+}
 
 function mediaController() {
   if (!bilibili) throw new Error("B 站服务尚未就绪。");
@@ -74,12 +174,15 @@ function assertTransportSender(event: IpcMainInvokeEvent): void {
 
 function broadcastTransport(state: BiliTransportState): void {
   // Size the native companion before its renderer receives a new media button.
-  floating?.setMediaActive(state.open);
-  broadcastMedia("bilibili:transport-state", state);
-  const companion = floating?.getWindow();
-  if (companion && !companion.isDestroyed() && !companion.webContents.isDestroyed()) {
-    try { companion.webContents.send("bilibili:transport-state", state); } catch { /* Reload obtains the current state. */ }
+  if (state.playIntent && !lastBiliIntent && !leisureSuppressed) {
+    activeProvider = "bilibili";
+    const other = youtube?.getTransportState();
+    if (other?.ready && other.playIntent) void youtube?.setPlaying(false, other.revision).catch(() => {});
   }
+  lastBiliIntent = state.playIntent;
+  broadcastMedia("bilibili:transport-state", state);
+  sendCompanion("bilibili:transport-state", state);
+  broadcastCurrentMedia();
 }
 
 function broadcastMedia(channel: string, value: unknown): void {
@@ -90,7 +193,14 @@ function broadcastMedia(channel: string, value: unknown): void {
   }
 }
 
+function sendMain(channel: string, value: unknown): void {
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+    try { win.webContents.send(channel, value); } catch { /* Reload reads a fresh snapshot. */ }
+  }
+}
+
 async function playBilibili(input: unknown, activate = true): Promise<BiliPlayback> {
+  assertLeisureAvailable();
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("播放参数无效。");
   const request = input as BiliPlayRequest;
@@ -102,6 +212,8 @@ async function playBilibili(input: unknown, activate = true): Promise<BiliPlayba
   const revision = ++playbackRequest;
   const playback = await mediaController().resolvePlayback(request);
   if (revision !== playbackRequest) throw new Error("已切换至另一个播放请求。");
+  assertLeisureAvailable();
+  activeProvider = "bilibili";
   await player!.open(playback, activate);
   return playback;
 }
@@ -366,6 +478,9 @@ async function requestQuit(): Promise<void> {
   await writeQueue;
   await holidays?.flush().catch(() => {});
   await bilibili?.flush().catch(() => {});
+  await youtube?.pauseAndHide().catch(() => {});
+  await youtube?.flush().catch(() => {});
+  await bossKey?.flush().catch(() => {});
   try {
     await floating?.flush();
   } catch {
@@ -382,8 +497,63 @@ async function requestQuit(): Promise<void> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle("boss-key:get", event => { assertTrusted(event); return bossKey!.getState(); });
+  ipcMain.handle("boss-key:set-shortcut", (event, shortcut: unknown) => { assertTrusted(event); return bossKey!.setShortcut(shortcut); });
+  ipcMain.handle("boss-key:trigger", event => {
+    if (!trustedSender(event) && !player?.isSender(event) && !floating?.isSender(event))
+      throw new Error("无法识别的老板键请求。");
+    return bossKey!.trigger();
+  });
+  ipcMain.handle("boss-key:restore", event => { assertTrusted(event); return bossKey!.restore(); });
+  ipcMain.handle("media:transport-state", event => { assertTransportSender(event); return currentMediaState(); });
+  ipcMain.handle("media:set-playing", (event, playing: unknown, revision: unknown, provider: unknown) => {
+    assertTransportSender(event);
+    if (typeof playing !== "boolean" || !Number.isSafeInteger(revision) || (provider !== "bilibili" && provider !== "youtube"))
+      throw new Error("播放控制参数无效。");
+    if (playing) assertLeisureAvailable();
+    if (currentMediaState().provider !== provider) throw new Error("当前媒体已切换，请重试。");
+    return provider === "youtube" ? youtube!.setPlaying(playing, Number(revision)) : player!.setPlaying(playing, revision);
+  });
+  const youtubeController = () => {
+    if (!youtube) throw new Error("YouTube 浏览器连接暂不可用，请重启后重试。");
+    return youtube;
+  };
+  ipcMain.handle("youtube:get", event => { assertTrusted(event); return youtubeController().getState(); });
+  ipcMain.handle("youtube:connect", (event, browser: YouTubeBrowser) => {
+    assertTrusted(event); assertLeisureAvailable();
+    return youtubeController().connectBrowser(browser);
+  });
+  ipcMain.handle("youtube:open", async (event, input: unknown) => {
+    assertTrusted(event); assertLeisureAvailable();
+    if (typeof input !== "string") throw new Error("请输入 YouTube 视频链接或编号。");
+    const epoch = leisureEpoch;
+    activeProvider = "youtube";
+    const state = await youtubeController().open(input);
+    if (epoch !== leisureEpoch || leisureSuppressed) {
+      await youtubeController().pauseAndHide();
+      throw new Error("摸鱼窗口已收起，本次播放已取消。");
+    }
+    return state;
+  });
+  ipcMain.handle("youtube:transport-state", event => { assertTrusted(event); return youtubeController().getTransportState(); });
+  ipcMain.handle("youtube:set-playing", (event, playing: unknown, revision: unknown) => {
+    assertTrusted(event);
+    if (typeof playing !== "boolean" || !Number.isSafeInteger(revision)) throw new Error("播放控制参数无效。");
+    if (playing) assertLeisureAvailable();
+    return youtubeController().setPlaying(playing, Number(revision));
+  });
+  ipcMain.handle("youtube:volume", (event, volume: number) => { assertTrusted(event); return youtubeController().setVolume(volume); });
+  ipcMain.handle("youtube:rate", (event, rate: number) => { assertTrusted(event); return youtubeController().setPlaybackRate(rate); });
+  ipcMain.handle("youtube:open-browser", (event, input?: string) => { assertTrusted(event); assertLeisureAvailable(); return youtubeController().openInBrowser(input); });
+  ipcMain.handle("youtube:login", event => { assertTrusted(event); assertLeisureAvailable(); return youtubeController().openLogin(); });
+  ipcMain.handle("youtube:extension-folder", event => { assertTrusted(event); return shell.openPath(extensionDirectory).then(error => { if (error) throw new Error("扩展文件夹暂时无法打开。"); }); });
+  for (const [channel, action] of [
+    ["youtube:show", () => { assertLeisureAvailable(); youtubeController().show(); }],
+    ["youtube:minimize", () => youtubeController().minimize()],
+    ["youtube:close", () => youtubeController().close()],
+  ] as const) ipcMain.on(channel, event => { if (trustedSender(event)) { try { action(); } catch { /* UI obtains the next state. */ } } });
   ipcMain.handle("bilibili:auth", (event) => { assertMediaSender(event); return mediaController().getAuth(); });
-  ipcMain.handle("bilibili:qr", (event) => { assertTrusted(event); return mediaController().createQr(); });
+  ipcMain.handle("bilibili:qr", (event) => { assertTrusted(event); assertLeisureAvailable(); return mediaController().createQr(); });
   ipcMain.handle("bilibili:cancel-login", (event) => { assertTrusted(event); mediaController().cancelLogin(); });
   ipcMain.handle("bilibili:logout", async (event) => {
     assertTrusted(event);
@@ -402,6 +572,7 @@ function registerIpc(): void {
   ipcMain.handle("bilibili:transport-state", event => { assertTransportSender(event); return player!.getTransportState(); });
   ipcMain.handle("bilibili:set-playing", (event, playing: unknown, revision: unknown) => {
     assertTransportSender(event);
+    if (playing === true) assertLeisureAvailable();
     return player!.setPlaying(playing, revision);
   });
   ipcMain.on("bilibili:transport-report", (event, state: unknown, commandId: unknown) => {
@@ -588,7 +759,7 @@ async function createWindow(): Promise<void> {
     const loginLaunch =
       process.platform === "darwin" &&
       app.getLoginItemSettings().wasOpenedAtLogin;
-    if (!process.argv.includes("--hidden") && !loginLaunch) showWindow();
+    if (!leisureSuppressed && !process.argv.includes("--hidden") && !loginLaunch) showWindow();
   });
   if (devServer) {
     const url = new URL(devServer);
@@ -616,6 +787,8 @@ function createTray(): void {
   const buildMenu = () => Menu.buildFromTemplate([
     { label: "打开摸鱼时钟", click: () => showWindow() },
     { label: "偏好设置", click: () => showWindow(true) },
+    { label: "老板键：收起摸鱼窗口", click: () => { void bossKey?.trigger().catch(() => {}); } },
+    { label: "恢复摸鱼窗口（保持暂停）", click: () => { void bossKey?.restore().catch(() => {}); } },
     ...(process.platform === "win32" ? [{
       label: "显示悬浮窗",
       type: "checkbox" as const,
@@ -663,6 +836,8 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    bossKey?.dispose();
+    youtube?.dispose();
     bilibili?.dispose();
     player?.dispose();
     holidays?.dispose();
@@ -683,8 +858,8 @@ if (!app.requestSingleInstanceLock()) {
         devServer,
         onState: state => {
           if (!state.open) playbackRequest++;
-          floating?.setMediaActive(state.open);
           broadcastMedia("bilibili:player-state", state);
+          broadcastCurrentMedia();
         },
         onTransportState: broadcastTransport,
       });
@@ -712,7 +887,14 @@ if (!app.requestSingleInstanceLock()) {
             win.webContents.send("floating:state", state);
         },
       });
-      floating.setMediaActive(player.getState().open);
+      youtube = await createYouTubeWindow({ extensionDirectory, onState: onYouTubeState, onTransportState: onYouTubeTransport }).catch(() => null);
+      broadcastCurrentMedia();
+      bossKey = await createBossKeyController({
+        directory: app.getPath("userData"), shortcuts: globalShortcut,
+        onTrigger: concealLeisure, onRestore: restoreLeisure,
+        onRepeatTrigger: repeatConcealLeisure,
+        onState: (state: BossKeyState) => broadcastMedia("boss-key:state", state),
+      });
       updater = createUpdaterController({
         onState: (state) => {
           if (state.status === "error") quitAllowed = false;
@@ -722,6 +904,9 @@ if (!app.requestSingleInstanceLock()) {
         beforeInstall: async () => {
           await writeQueue;
           await bilibili?.flush();
+          await bossKey?.flush();
+          await youtube?.pauseAndHide();
+          await youtube?.flush();
           await holidays?.flush().catch(() => {});
           await floating?.flush();
           if (lastWriteError)

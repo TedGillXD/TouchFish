@@ -3,6 +3,9 @@ import type { AppData } from "../src/core";
 import type { UpdateState } from "../src/update-types";
 import type { FloatingState } from "../src/floating-types";
 import type { HolidayState } from "../src/holiday-types";
+import type { BossKeyState } from "../src/boss-key-types";
+import type { MediaProvider, MediaTransportState } from "../src/media-types";
+import type { YouTubeBrowser, YouTubePlayerState } from "../src/youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "../src/bilibili-types";
 
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
@@ -29,6 +32,35 @@ contextBridge.exposeInMainWorld("touchFish", {
     ipcRenderer.invoke("login:set", enabled),
   updateStatus: (message: string): void =>
     ipcRenderer.send("tray:status", message),
+  bossKey: {
+    getState: (): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:get"),
+    setShortcut: (shortcut: string): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:set-shortcut", shortcut),
+    trigger: (): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:trigger"),
+    restore: (): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:restore"),
+    onState: (callback: (state: BossKeyState) => void) => listen("boss-key:state", callback),
+  },
+  media: {
+    getTransportState: (): Promise<MediaTransportState> => ipcRenderer.invoke("media:transport-state"),
+    setPlaying: (playing: boolean, revision: number, provider: MediaProvider): Promise<BiliTransportState> => ipcRenderer.invoke("media:set-playing", playing, revision, provider),
+    onTransportState: (callback: (state: MediaTransportState) => void) => listen("media:transport-state", callback),
+  },
+  youtube: {
+    getState: (): Promise<YouTubePlayerState> => ipcRenderer.invoke("youtube:get"),
+    connectBrowser: (browser: YouTubeBrowser): Promise<YouTubePlayerState> => ipcRenderer.invoke("youtube:connect", browser),
+    open: (input: string): Promise<YouTubePlayerState> => ipcRenderer.invoke("youtube:open", input),
+    getTransportState: (): Promise<BiliTransportState> => ipcRenderer.invoke("youtube:transport-state"),
+    setPlaying: (playing: boolean, revision: number): Promise<BiliTransportState> => ipcRenderer.invoke("youtube:set-playing", playing, revision),
+    setVolume: (volume: number): Promise<void> => ipcRenderer.invoke("youtube:volume", volume),
+    setPlaybackRate: (rate: number): Promise<void> => ipcRenderer.invoke("youtube:rate", rate),
+    show: (): void => ipcRenderer.send("youtube:show"),
+    minimize: (): void => ipcRenderer.send("youtube:minimize"),
+    close: (): void => ipcRenderer.send("youtube:close"),
+    openInBrowser: (input?: string): Promise<void> => ipcRenderer.invoke("youtube:open-browser", input),
+    openLogin: (): Promise<void> => ipcRenderer.invoke("youtube:login"),
+    openExtensionFolder: (): Promise<void> => ipcRenderer.invoke("youtube:extension-folder"),
+    onState: (callback: (state: YouTubePlayerState) => void) => listen("youtube:state", callback),
+    onTransportState: (callback: (state: BiliTransportState) => void) => listen("youtube:transport-state", callback),
+  },
   bilibili: {
     getAuth: (): Promise<BiliAuthState> => ipcRenderer.invoke("bilibili:auth"),
     createQr: (): Promise<BiliAuthState> => ipcRenderer.invoke("bilibili:qr"),

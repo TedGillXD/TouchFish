@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { emptyData, getDaySummary, normalizeData, type AppData } from "./core";
 import type { FloatingState } from "./floating-types";
-import type { BiliTransportState } from "./bilibili-types";
+import type { MediaTransportState } from "./media-types";
 import { dateKey } from "./core";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 
@@ -35,15 +35,15 @@ export default function FloatingWindow() {
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reload, setReload] = useState(0);
-  const [media, setMedia] = useState<BiliTransportState | null>(null);
+  const [media, setMedia] = useState<MediaTransportState | null>(null);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaError, setMediaError] = useState("");
-  const mediaSnapshot = useRef<BiliTransportState | null>(null);
+  const mediaSnapshot = useRef<MediaTransportState | null>(null);
   const mediaMounted = useRef(false);
   const mediaPending = useRef(false);
   const mediaOperation = useRef(0);
   const api = window.touchFish?.floating;
-  const mediaApi = window.touchFish?.bilibili;
+  const mediaApi = window.touchFish?.media;
   useHolidayYears(yearsForDates(dateKey(now)), data?.settings.publicHolidays !== false);
 
   useEffect(() => {
@@ -98,9 +98,9 @@ export default function FloatingWindow() {
     if (!mediaApi) return;
     mediaMounted.current = true;
     let revision = 0;
-    const accept = (next: BiliTransportState) => {
+    const accept = (next: MediaTransportState) => {
       if (!mediaMounted.current) return;
-      if (next.revision !== mediaSnapshot.current?.revision || !next.open) {
+      if (next.revision !== mediaSnapshot.current?.revision || next.provider !== mediaSnapshot.current?.provider || !next.open) {
         mediaOperation.current++;
         mediaPending.current = false;
         setMediaBusy(false);
@@ -118,7 +118,7 @@ export default function FloatingWindow() {
 
   const toggleMedia = useCallback(async () => {
     const current = mediaSnapshot.current;
-    if (!mediaApi || !current?.open || !current.ready || mediaPending.current) return;
+    if (!mediaApi || !current?.open || !current.provider || !current.ready || mediaPending.current) return;
     const operation = ++mediaOperation.current;
     mediaPending.current = true;
     setMediaBusy(true);
@@ -126,10 +126,10 @@ export default function FloatingWindow() {
     try {
       // Native code routes this explicit intent to the current player without
       // revealing stream URLs or bringing a minimized window to the foreground.
-      await mediaApi.setPlaying(!current.playIntent, current.revision);
+      await mediaApi.setPlaying(!current.playIntent, current.revision, current.provider);
     } catch {
       if (mediaMounted.current && operation === mediaOperation.current)
-        setMediaError("播放操作失败，请在 B站小窗中重试");
+        setMediaError("播放操作失败，请在播放器中重试");
     } finally {
       if (mediaMounted.current && operation === mediaOperation.current) {
         mediaPending.current = false;
@@ -176,6 +176,7 @@ export default function FloatingWindow() {
   const percent = ready ? summary.progress * 100 : 0;
   const compactLabel = !ready ? "—" : summary.status === "rest"
     ? "休息日" : `${percent.toFixed(1)}%`;
+  const mediaName = media?.provider === "youtube" ? "YouTube" : "B站";
 
   return (
     <main
@@ -201,10 +202,10 @@ export default function FloatingWindow() {
         </div>
         {media?.open && <button
           className={`floating-media-toggle ${media.playIntent ? "playing" : ""} ${mediaError ? "has-error" : ""}`}
-          aria-label={media.playIntent ? "暂停B站播放" : "继续B站播放"}
+          aria-label={media.playIntent ? `暂停${mediaName}播放` : `继续${mediaName}播放`}
           aria-pressed={media.playIntent}
           aria-describedby={mediaError ? "floating-media-feedback" : undefined}
-          title={mediaError || (media.failed ? "播放异常，请在 B站小窗中重试" : !media.ready ? "B站播放器正在准备" : media.playIntent ? "暂停 B站音视频" : "继续 B站音视频")}
+          title={mediaError || (media.failed ? "播放异常，请在播放器中重试" : !media.ready ? `${mediaName}播放器正在准备` : media.playIntent ? `暂停 ${mediaName}音视频` : `继续 ${mediaName}音视频`)}
           disabled={!media.ready || mediaBusy}
           onClick={() => void toggleMedia()}
         >

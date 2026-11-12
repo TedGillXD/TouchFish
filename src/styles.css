@@ -157,6 +157,9 @@ svg {
   scrollbar-width: thin;
   scrollbar-color: #dce2e0 transparent;
 }
+.leisure-tabs { display: flex; gap: 4px; padding: 3px; margin: 0 0 10px; background: #f2f6f4; border-radius: 10px; }
+.leisure-tabs button { flex: 1; border-radius: 7px; padding: 7px 12px; font-size: 11px; color: #819188; }
+.leisure-tabs button[aria-selected="true"] { background: #fff; color: #16865e; box-shadow: 0 1px 3px #203d2b10; font-weight: 600; }
 .greeting {
   display: flex;
   align-items: center;

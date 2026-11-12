@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "TouchFish YouTube Companion",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "description": "Control only the YouTube windows opened by TouchFish, using your normal browser account.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwQHMiSalun+woHKzrZtGdZG4hM/+lPUlwVaGREisdlG/9uAV9F/NnvToU8xd6pPvP6tvqlMfLHHYGnVFIawi+BJxrOdErN3NMb3a4QQOhGeFwreaDZDTKuraIh1IKRuVoSj1di2s3M2fckCQ1BRZvJ9Jg51zMP2PRAzOXGe7sULQ57fUejjj3R2g4gZUvyZpiRU0Or/X08cDDrYedjEVV5l7fYLtXXDQC5FLs08MMCKtg5KdfKVGZ7G4kDKlPqlYziuirS0nYrGM0V75RZ33GgmMXRcPGV2hh0KssI97XPqhCZI7yKFNBG9jk5tK4rLa3O7G3TvmH4uJ8toG1yAawwIDAQAB",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.youtube.com/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{ "matches": ["https://www.youtube.com/*"], "js": ["content.js"], "run_at": "document_idle", "all_frames": false }],
+  "externally_connectable": { "matches": ["http://127.0.0.1/*"] },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src ws://127.0.0.1:*" },
+  "action": { "default_title": "TouchFish YouTube Companion" }
+}

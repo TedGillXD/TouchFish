@@ -70,6 +70,7 @@ export async function createFloatingController(options: FloatingOptions) {
   let expectedBounds: Rectangle | undefined;
   let applyingBounds = false;
   let mediaActive = false;
+  let concealed = false;
   let movePending = false;
   let quitting = false;
   let disposed = false;
@@ -218,7 +219,7 @@ export async function createFloatingController(options: FloatingOptions) {
     if (initializing) return initializing;
     if (window && !window.isDestroyed()) {
       applyBounds();
-      window.showInactive();
+      if (!concealed) window.showInactive();
       return;
     }
     initializing = (async () => {
@@ -272,7 +273,7 @@ export async function createFloatingController(options: FloatingOptions) {
       companion.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       companion.webContents.session.setPermissionCheckHandler(() => false);
       companion.once("ready-to-show", () => {
-        if (!disposed && preferences.enabled) {
+        if (!disposed && preferences.enabled && !concealed) {
           applyBounds();
           companion.showInactive();
         }
@@ -334,6 +335,14 @@ export async function createFloatingController(options: FloatingOptions) {
     applyBounds();
   }
 
+  /** A boss-key concealment is temporary and must not rewrite preferences. */
+  function setConcealed(hidden: boolean): void {
+    concealed = hidden;
+    if (!window || window.isDestroyed()) return;
+    if (hidden) window.hide();
+    else if (preferences.enabled && !disposed) window.showInactive();
+  }
+
   async function flush(): Promise<void> {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -368,6 +377,7 @@ export async function createFloatingController(options: FloatingOptions) {
     setExpanded,
     setPrivacy,
     setMediaActive,
+    setConcealed,
     initializeWindow,
     flush,
     dispose: () => {

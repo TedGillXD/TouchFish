@@ -1,0 +1,171 @@
+import { _electron as electron, expect } from "@playwright/test";
+import electronPath from "electron";
+import { WebSocket } from "ws";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { createBilibiliDesktopFixture } from "./bilibili-desktop-fixture.mjs";
+
+const { userData, harnessPath } = await createBilibiliDesktopFixture({ prefix: ".cache/youtube-ui-", mainSetup: `
+const {shell,ipcMain}=require('electron');
+globalThis.youtubeLaunches=[];globalThis.youtubeFolders=[];
+shell.openExternal=async url=>{globalThis.youtubeLaunches.push(url);};
+shell.openPath=async path=>{globalThis.youtubeFolders.push(path);return '';};
+const nativeOn=ipcMain.on.bind(ipcMain);let holdReports=false;const reports=[];
+ipcMain.on=(channel,listener)=>nativeOn(channel,channel==='bilibili:transport-report'?(...args)=>{if(holdReports)reports.push({listener,args});else listener(...args);}:listener);
+globalThis.youtubeBiliProbe={hold:()=>{holdReports=true;},release:()=>{holdReports=false;for(const item of reports.splice(0))item.listener(...item.args);},get pending(){return reports.length;}};
+` });
+const env = { ...process.env, TOUCHFISH_USER_DATA: userData, TOUCHFISH_KEEP_OPEN: "1", TOUCHFISH_HOLIDAYS_AUTO_REFRESH: "0" };
+delete env.ELECTRON_RUN_AS_NODE;
+let desktop, main, connection;
+const errors = [], commands = [];
+let mediaState = { open: false };
+const publicState = () => ({ open: true, visible: true, minimized: false, ready: true, playing: true, playIntent: true, buffering: false,
+  ended: false, failed: false, sourceId: "fixture-source", videoId: "aqz-KE-bpKQ", title: "Original local YouTube fixture", currentTime: 2, duration: 20, volume: 1, playbackRate: 1 });
+
+try {
+  desktop = await electron.launch({ executablePath: electronPath, args: [harnessPath], env });
+  await expect.poll(() => desktop.windows().some(page => page.url().endsWith("/index.html"))).toBe(true);
+  main = desktop.windows().find(page => page.url().endsWith("/index.html"));
+  main.setDefaultTimeout(15000); main.on("pageerror", error => errors.push(error.message));
+  console.log("Checking platform routing, disconnected controls, and transparent browser setup...");
+  await main.getByRole("button", { name: "摸鱼", exact: true }).click();
+  await main.getByRole("tab", { name: "YouTube", exact: true }).click();
+  await expect(main.getByRole("heading", { name: "摸鱼 · YouTube", exact: true })).toBeVisible();
+  const section = main.getByRole("region", { name: "YouTube浏览器连接", exact: true });
+  await expect(section.getByText("未连接", { exact: true })).toBeVisible();
+  await expect(main.getByRole("button", { name: "播放", exact: true })).toBeDisabled();
+  await expect(main.getByRole("button", { name: "在专属窗口打开 YouTube / 登录", exact: true })).toBeDisabled();
+  await main.screenshot({ path: ".cache/youtube-panel.png", scale: "css" });
+  const browser = main.getByLabel("YouTube浏览器", { exact: true });
+  await browser.selectOption("chrome"); await expect(browser).toHaveValue("chrome");
+  await browser.selectOption("edge"); await expect(browser).toHaveValue("edge");
+  await browser.selectOption("default");
+  await section.getByRole("button", { name: "打开扩展目录", exact: true }).click();
+  expect(await desktop.evaluate(() => globalThis.youtubeFolders)).toEqual([resolve("extensions/youtube-companion")]);
+  await section.getByRole("button", { name: "连接浏览器", exact: true }).click();
+  await expect.poll(() => desktop.evaluate(() => globalThis.youtubeLaunches.length)).toBe(1);
+  const pairing = await desktop.evaluate(() => globalThis.youtubeLaunches[0]);
+  expect(pairing).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/pair\?code=[a-f0-9]{48}$/);
+  const html = await (await fetch(pairing)).text();
+  const config = JSON.parse(/<script type="application\/json" id="config">([^<]+)<\/script>/.exec(html)?.[1] || "null");
+  connection = new WebSocket(config.url, ["touchfish-youtube-v1", config.token], { origin: `chrome-extension://${config.extensionId}` });
+  connection.on("error", () => {});
+  connection.on("message", bytes => {
+    const message = JSON.parse(bytes.toString()); if (message.type !== "command") return;
+    commands.push(message);
+    if (message.action === "open" || message.action === "openSite") mediaState = publicState();
+    else if (message.action === "setPlaying") mediaState = { ...mediaState, playing: message.args.playing, playIntent: message.args.playing };
+    else if (message.action === "setVolume") mediaState = { ...mediaState, volume: message.args.volume };
+    else if (message.action === "setPlaybackRate") mediaState = { ...mediaState, playbackRate: message.args.rate };
+    else if (message.action === "pauseAndMinimize") mediaState = { ...mediaState, playing: false, playIntent: false, visible: false, minimized: true };
+    else if (message.action === "restorePaused") mediaState = { ...mediaState, playing: false, playIntent: false, ...(message.args.show === false ? {} : { visible: true, minimized: false }) };
+    else if (message.action === "close") mediaState = { open: false };
+    connection.send(JSON.stringify({ type: "response", id: message.id, ok: true, result: { state: mediaState } }));
+  });
+  await new Promise((resolve, reject) => { connection.once("open", resolve); connection.once("error", reject); });
+  connection.send(JSON.stringify({ type: "hello", version: 1, browser: "chrome" }));
+  await expect(section.getByText("已连接", { exact: true })).toBeVisible();
+
+  console.log("Checking input validation, native bridge controls, floating transport, and boss key UI state...");
+  const input = main.getByLabel("YouTube链接或视频ID", { exact: true });
+  await input.fill("https://youtube.com.evil.invalid/watch?v=aqz-KE-bpKQ");
+  await main.getByRole("button", { name: "播放", exact: true }).click();
+  await expect(main.getByRole("alert")).toContainText("仅支持 YouTube 官方 HTTPS 视频链接");
+  expect(commands.some(command => command.action === "open")).toBe(false);
+  await input.fill("https://youtu.be/aqz-KE-bpKQ");
+  await main.getByRole("button", { name: "播放", exact: true }).click();
+  const current = main.getByRole("region", { name: "YouTube专属窗口", exact: true });
+  await expect(current.getByText("Original local YouTube fixture", { exact: true })).toBeVisible();
+  expect(commands.find(command => command.action === "open").args.url).toBe("https://www.youtube.com/watch?v=aqz-KE-bpKQ");
+  await current.getByRole("button", { name: "暂停YouTube播放", exact: true }).click();
+  await expect(current.getByRole("button", { name: "继续YouTube播放", exact: true })).toBeEnabled();
+  await current.getByRole("button", { name: "继续YouTube播放", exact: true }).click();
+  await expect(current.getByRole("button", { name: "暂停YouTube播放", exact: true })).toBeEnabled();
+  await main.getByLabel("YouTube倍速", { exact: true }).selectOption("1.5");
+  await expect.poll(() => commands.some(command => command.action === "setPlaybackRate" && command.args.rate === 1.5)).toBe(true);
+  if (process.platform === "win32") {
+    const floating = desktop.windows().find(page => page.url().includes("window=floating"));
+    await expect(floating.getByRole("button", { name: "暂停YouTube播放", exact: true })).toBeEnabled();
+    await floating.getByRole("button", { name: "暂停YouTube播放", exact: true }).click();
+    await expect(current.getByRole("button", { name: "继续YouTube播放", exact: true })).toBeEnabled();
+    for (const operation of ["getState", "connectBrowser", "open", "openLogin", "openExtensionFolder"]) {
+      const denied = await floating.evaluate(async operation => { try { await window.touchFish.youtube[operation]("aqz-KE-bpKQ"); return false; } catch { return true; } }, operation);
+      expect(denied).toBe(true);
+    }
+  }
+  console.log("Checking delayed Bili readiness cannot steal the active YouTube provider after restore...");
+  await desktop.evaluate(() => globalThis.youtubeBiliProbe.hold());
+  await main.evaluate(() => window.touchFish.bilibili.play({ bvid: "BV17x411w7KC", mode: "video" }));
+  await expect.poll(() => desktop.windows().some(page => page.url().includes("window=player"))).toBe(true);
+  const biliPlayer = desktop.windows().find(page => page.url().includes("window=player"));
+  await expect.poll(() => desktop.evaluate(() => globalThis.youtubeBiliProbe.pending)).toBeGreaterThan(0);
+  expect((await main.evaluate(() => window.touchFish.bilibili.getTransportState())).ready).toBe(false);
+  await main.evaluate(() => window.touchFish.bossKey.trigger());
+  await expect(current.getByText(/已被老板键收起/)).toBeAttached();
+  await expect(current.getByRole("button", { name: "继续YouTube播放", exact: true })).toBeDisabled();
+  await expect(main.getByRole("button", { name: "播放", exact: true })).toBeDisabled();
+  await main.evaluate(() => window.touchFish.bossKey.restore());
+  await expect(current.getByRole("button", { name: "继续YouTube播放", exact: true })).toBeEnabled();
+  await current.getByRole("button", { name: "继续YouTube播放", exact: true }).click();
+  await expect.poll(async () => (await main.evaluate(() => window.touchFish.media.getTransportState())).provider).toBe("youtube");
+  const ytPauseCount = commands.filter(command => command.action === "setPlaying" && command.args.playing === false).length;
+  await desktop.evaluate(() => globalThis.youtubeBiliProbe.release());
+  await expect.poll(async () => (await main.evaluate(() => window.touchFish.bilibili.getTransportState())).ready).toBe(true);
+  await expect.poll(async () => biliPlayer.evaluate(() => [...document.querySelectorAll("video,audio")].every(media => media.paused))).toBe(true);
+  const active = await main.evaluate(() => window.touchFish.media.getTransportState());
+  expect(active.provider).toBe("youtube"); expect(active.playIntent).toBe(true);
+  expect(commands.filter(command => command.action === "setPlaying" && command.args.playing === false).length).toBe(ytPauseCount);
+  connection.close();
+  await expect(section.getByText("未连接", { exact: true })).toBeVisible();
+  await expect(main.getByRole("button", { name: "播放", exact: true })).toBeDisabled();
+  await main.getByRole("tab", { name: "B 站", exact: true }).click();
+  await expect(main.getByRole("heading", { name: "摸鱼 · B 站", exact: true })).toBeVisible();
+  await main.getByRole("button", { name: "设置", exact: true }).click();
+  await main.getByRole("region", { name: "老板键设置", exact: true }).scrollIntoViewIfNeeded();
+  await main.screenshot({ path: ".cache/boss-key-settings.png", scale: "css" });
+
+  console.log("Checking the actual content script with decoded original local media...");
+  const contentCode = await readFile(resolve("extensions/youtube-companion/content.js"), "utf8");
+  await desktop.evaluate(async ({ BrowserWindow, session }, { videoPath, audioPath, contentCode }) => {
+    const fs = process.getBuiltinModule("node:fs");
+    const network = session.fromPartition("youtube-content-fixture", { cache: false });
+    network.protocol.handle("https", request => {
+      const url = new URL(request.url);
+      if (url.pathname === "/fixture.webm") return new Response(fs.readFileSync(videoPath), { headers: { "Content-Type": "video/webm" } });
+      if (url.pathname === "/fixture.wav") return new Response(fs.readFileSync(audioPath), { headers: { "Content-Type": "audio/wav" } });
+      return new Response('<!doctype html><title>Original local fixture</title><video class="html5-main-video" src="/fixture.webm"></video><audio src="/fixture.wav"></audio>', { headers: { "Content-Type": "text/html" } });
+    });
+    const window = new BrowserWindow({ show: false, webPreferences: { partition: "youtube-content-fixture", sandbox: true, contextIsolation: true, nodeIntegration: false, autoplayPolicy: "no-user-gesture-required" } });
+    await window.loadURL("https://www.youtube.com/watch?v=aqz-KE-bpKQ");
+    await window.webContents.executeJavaScript(`globalThis.youtubeContentFixture={listeners:[],reports:[]};youtubeContentFixture.hello=new Promise(resolve=>youtubeContentFixture.resolveHello=resolve);Object.defineProperty(globalThis,'chrome',{value:{runtime:{id:'fixture-extension',onMessage:{addListener:listener=>youtubeContentFixture.listeners.push(listener)},sendMessage:async message=>{youtubeContentFixture.reports.push(message);return message.type==='touchfish-hello'?youtubeContentFixture.hello:{};}}}});void 0;`);
+    await window.webContents.executeJavaScript(contentCode);
+  }, { videoPath: resolve("tests/fixtures/bili-video.webm"), audioPath: resolve("tests/fixtures/bili-audio.wav"), contentCode });
+  await expect.poll(() => desktop.windows().some(page => page.url().startsWith("https://www.youtube.com/watch"))).toBe(true);
+  const content = desktop.windows().find(page => page.url().startsWith("https://www.youtube.com/watch"));
+  const control = (action, generation, args = {}) => content.evaluate(({ action, generation, args }) => { let state; for (const listener of globalThis.youtubeContentFixture.listeners) listener({ type: "touchfish-control", action, generation, ...args }, { id: "fixture-extension" }, value => { state = value; }); return state; }, { action, generation, args });
+  await content.evaluate(async () => { await Promise.all([...document.querySelectorAll("video,audio")].map(media => media.play())); });
+  const tracks = () => content.evaluate(() => [...document.querySelectorAll("video,audio")].map(media => ({ paused: media.paused, time: media.currentTime, ready: media.readyState })));
+  await expect.poll(async () => (await tracks()).every(track => !track.paused && track.ready >= 2 && track.time > .1)).toBe(true);
+  await control("hold", 20);
+  await expect.poll(async () => (await tracks()).every(track => track.paused)).toBe(true);
+  const before = await tracks();
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const after = await tracks();
+  after.forEach((track, index) => expect(Math.abs(track.time - before[index].time)).toBeLessThan(.04));
+  await content.evaluate(() => globalThis.youtubeContentFixture.resolveHello({ managed: true, suspended: false, generation: 20 }));
+  await control("attach", 19);
+  await control("setPlaying", 19, { playing: true });
+  await expect.poll(async () => (await tracks()).every(track => track.paused)).toBe(true);
+  await content.evaluate(() => document.querySelector("video").play());
+  await expect.poll(async () => (await tracks()).every(track => track.paused)).toBe(true);
+  await control("setPlaying", 21, { playing: true });
+  await expect.poll(async () => !(await tracks())[0].paused).toBe(true);
+  await control("hold", 22);
+  await expect.poll(async () => (await tracks()).every(track => track.paused)).toBe(true);
+  expect(errors).toEqual([]);
+  console.log("PASS: YouTube routes/setup/connection state, input validation, canonical video command, player/floating controls, sensitive IPC restrictions, boss conceal/paused restore, and real decoded media held by the actual content script. No real YouTube playback or browser login was simulated as accepted.");
+} finally {
+  connection?.close();
+  await desktop?.evaluate(({ app }) => app.exit(0)).catch(() => {});
+  await desktop?.close().catch(() => {});
+}

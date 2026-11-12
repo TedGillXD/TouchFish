@@ -58,6 +58,8 @@ import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-clien
 import UpdatePanel from "./UpdatePanel";
 import FloatingSettings from "./FloatingSettings";
 import BilibiliPanel from "./BilibiliPanel";
+import YouTubePanel from "./YouTubePanel";
+import BossKeySettings from "./BossKeySettings";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -65,7 +67,7 @@ import {
   shortDate,
 } from "./Payroll";
 
-type View = "home" | "settings" | "calendar" | "history" | "payroll" | "bilibili";
+type View = "home" | "settings" | "calendar" | "history" | "payroll" | "bilibili" | "youtube";
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 const money = (n: number) =>
   n.toLocaleString("zh-CN", {
@@ -322,10 +324,10 @@ function App() {
         </button>
         <div className="header-actions">
           <button
-            className={`icon-button ${view === "bilibili" ? "selected" : ""}`}
-            title="摸鱼 · B站音视频"
+            className={`icon-button ${view === "bilibili" || view === "youtube" ? "selected" : ""}`}
+            title="摸鱼 · 视频与音频"
             aria-label="摸鱼"
-            onClick={() => setView(view === "bilibili" ? "home" : "bilibili")}
+            onClick={() => setView(view === "bilibili" || view === "youtube" ? "home" : "bilibili")}
           >
             <Tv size={18} />
           </button>
@@ -665,7 +667,12 @@ function App() {
           </>
         )}
 
+        {(view === "bilibili" || view === "youtube") && <div className="leisure-tabs" role="tablist" aria-label="摸鱼平台">
+          <button role="tab" aria-selected={view === "bilibili"} onClick={() => setView("bilibili")}>B 站</button>
+          <button role="tab" aria-selected={view === "youtube"} onClick={() => setView("youtube")}>YouTube</button>
+        </div>}
         {view === "bilibili" && <BilibiliPanel onBack={() => setView("home")} />}
+        {view === "youtube" && <YouTubePanel onBack={() => setView("home")} />}
         {view === "settings" && (
           <SettingsPanel
             settings={data.settings}
@@ -1134,6 +1141,7 @@ function SettingsPanel({
           {loginError && <p className="field-error">{loginError}</p>}
         </section>
       )}
+      <BossKeySettings />
       <FloatingSettings />
       <UpdatePanel
         hasUnsavedSettings={JSON.stringify(draft) !== JSON.stringify(settings)}
