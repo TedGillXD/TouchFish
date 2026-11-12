@@ -24,6 +24,7 @@ let app;
 let main;
 let floating;
 const errors = [];
+let nativeErrorLog = "";
 const readPreferences = async () =>
   JSON.parse(await readFile(resolve(userData, "floating.json"), "utf8"));
 const readData = async () =>
@@ -51,6 +52,18 @@ async function launch() {
     executablePath: process.env.TOUCHFISH_EXECUTABLE || electronPath,
     args: process.env.TOUCHFISH_EXECUTABLE ? [] : ["."],
     env,
+  });
+  app.process().stderr?.on("data", chunk => { nativeErrorLog += chunk.toString(); });
+  await app.evaluate(({ dialog }) => {
+    // A native error box blocks an unattended runner. Record it instead, and
+    // still fail the test, so filesystem errors remain visible in CI logs.
+    globalThis.floatingNativeErrors = [];
+    dialog.showErrorBox = (title, content) => {
+      globalThis.floatingNativeErrors.push({ title, content });
+      // Keep shutdown errors observable even if the process exits before the
+      // host can request its final in-memory diagnostic snapshot.
+      console.error("TOUCHFISH_UNEXPECTED_NATIVE_ERROR_BOX", title, content);
+    };
   });
   await expect.poll(() => app.windows().filter((page) =>
     page.url().includes("window=floating")).length).toBe(1);
@@ -113,9 +126,11 @@ async function assertMirroredTime(expected) {
 }
 
 async function quitNormally() {
+  expect(await app.evaluate(() => globalThis.floatingNativeErrors)).toEqual([]);
   const closed = app.waitForEvent("close", { timeout: 15000 });
   await main.evaluate(() => window.touchFish.quit());
   await closed;
+  expect(nativeErrorLog).not.toContain("TOUCHFISH_UNEXPECTED_NATIVE_ERROR_BOX");
   app = undefined;
 }
 
@@ -293,12 +308,64 @@ try {
   await step("Expand native window", () => floating.getByRole("button", { name: "展开悬浮窗" }).click());
   await step("Check expanded bounds", () => assertSize(264, 148));
   await step("Check expanded anchor", async () => expect((await windowInfo()).bounds).toMatchObject(expectedPosition));
+  await step("Install native close reentry probe", () => app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().includes("window=floating"));
+    const originalHide = win.hide;
+    const sends = BrowserWindow.getAllWindows().map(window => ({ contents: window.webContents, send: window.webContents.send }));
+    const probe = { inClose: false, closeEvents: 0, hides: 0, publishes: 0, reentrantHides: 0, reentrantPublishes: 0 };
+    const onClose = () => {
+      probe.closeEvents++;
+      probe.inClose = true;
+      // This listener runs first; its immediate marks the native dispatch as
+      // finished before the production close handler's deferred work begins.
+      setImmediate(() => { probe.inClose = false; });
+    };
+    win.prependListener("close", onClose);
+    win.hide = function (...args) {
+      probe.hides++;
+      if (probe.inClose) { probe.reentrantHides++; return; }
+      return originalHide.apply(this, args);
+    };
+    for (const item of sends) item.contents.send = function (channel, ...args) {
+      if (channel === "floating:state" && args[0]?.enabled === false) {
+        probe.publishes++;
+        if (probe.inClose) { probe.reentrantPublishes++; return; }
+      }
+      return item.send.call(this, channel, ...args);
+    };
+    // The probe suppresses unsafe native calls only when it detects a
+    // regression, allowing assertions to fail without hanging Win32 again.
+    globalThis.floatingCloseProbe = {
+      read: () => ({ ...probe }),
+      restore: () => {
+        win.hide = originalHide;
+        win.removeListener("close", onClose);
+        for (const item of sends) item.contents.send = item.send;
+      },
+    };
+  }));
   await step("Close native floating window", () => app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows().find((candidate) =>
       candidate.webContents.getURL().includes("window=floating")).close();
   }));
+  await step("Check close handler avoids native reentry", async () => {
+    await expect.poll(() => app.evaluate(() => globalThis.floatingCloseProbe.read().closeEvents)).toBe(1);
+    const probe = await app.evaluate(() => globalThis.floatingCloseProbe.read());
+    expect(probe.reentrantHides).toBe(0);
+    expect(probe.reentrantPublishes).toBe(0);
+  });
   await step("Check closed window is hidden", () => expect.poll(async () => (await windowInfo()).visible).toBe(false));
   await step("Check disabled preference", () => expect.poll(async () => (await readPreferences()).enabled).toBe(false));
+  await step("Check deferred native close completed", async () => {
+    const probe = await app.evaluate(() => {
+      const value = globalThis.floatingCloseProbe.read();
+      globalThis.floatingCloseProbe.restore();
+      return value;
+    });
+    expect(probe.hides).toBeGreaterThan(0);
+    expect(probe.publishes).toBeGreaterThan(0);
+    expect(await app.evaluate(() => globalThis.floatingNativeErrors)).toEqual([]);
+  });
   await step("Reopen native floating window", () => main.evaluate(() => window.touchFish.floating.setEnabled(true)));
   await step("Check reopened window", () => expect.poll(async () => (await windowInfo()).visible).toBe(true));
 
@@ -351,6 +418,12 @@ try {
   // Report the original error before cleanup, which may itself encounter an
   // unresponsive Electron main process.
   console.error(error);
+  if (app) {
+    await step("Read native error diagnostics", async () => {
+      console.error("Native errors:", await app.evaluate(() => globalThis.floatingNativeErrors));
+      console.error("Close probe:", await app.evaluate(() => globalThis.floatingCloseProbe?.read()));
+    }, 2000).catch(error => console.error(`Native diagnostics unavailable: ${error.message}`));
+  }
   if (main && !main.isClosed()) {
     await step("Capture failure UI state", async () => {
       console.error("Failure UI:", await main.evaluate(() => ({

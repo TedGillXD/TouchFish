@@ -261,7 +261,12 @@ export async function createFloatingController(options: FloatingOptions) {
       companion.on("close", (event) => {
         if (!quitting && !disposed) {
           event.preventDefault();
-          nativeOperation(setEnabled(false));
+          // Finish Windows' native close dispatch before hiding the window or
+          // publishing state. Re-entering Win32 here can stall the UI thread.
+          setImmediate(() => {
+            if (quitting || disposed || window !== companion || companion.isDestroyed()) return;
+            nativeOperation(setEnabled(false));
+          });
         }
       });
       companion.on("closed", () => {
