@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.0-1f9d75?style=flat-square" alt="版本 1.5.0" />
+  <img src="https://img.shields.io/badge/version-1.5.1-1f9d75?style=flat-square" alt="版本 1.5.1" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -48,6 +48,8 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 | Windows 悬浮窗 | 置顶显示今日计薪进度，展开查看收入、时长与状态；支持拖动、记住位置和同步隐藏金额 |
 | B站摸鱼小窗 | 扫码登录后输入 BV 号听、看视频；无边框小窗可缩放、不置顶，鼠标移入显示播放控制 |
 | 播放与弹幕 | 支持分 P、进度、倍速、可用清晰度、音量和弹幕开关；听视频时仅保留音频流 |
+
+**1.5.1** 修正计薪规则：点击开始立即计薪，按当前至下班的有效秒数分摊日目标；下班或手动结束时补齐该日目标，保留真实计薪时长，并兼容旧版已结束、暂停和等待上班的记录。
 
 **1.5.0** 新增 B 站摸鱼入口，并包含假期与发薪双倒计时、三种发薪策略和自定义周休。公众假期倒计时独立于公司的计薪排班；没有可用节假日数据时提示更新，假期当天显示「假期中」，发薪当天显示「今天发薪」。
 
@@ -184,7 +186,7 @@ Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今
 
 ## 工资如何计算
 
-以下为当前源码中的计薪修正规则，尚未包含在已发布的 **v1.5.0** 安装包中。
+**1.5.1** 起采用以下计薪规则。
 
 ```text
 当日日目标   = 税前月薪 ÷ 所属计薪周期的计划工作日数
