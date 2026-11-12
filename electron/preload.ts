@@ -3,7 +3,7 @@ import type { AppData } from "../src/core";
 import type { UpdateState } from "../src/update-types";
 import type { FloatingState } from "../src/floating-types";
 import type { HolidayState } from "../src/holiday-types";
-import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo } from "../src/bilibili-types";
+import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "../src/bilibili-types";
 
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld("touchFish", {
     play: (request: BiliPlayRequest): Promise<BiliPlayback> => ipcRenderer.invoke("bilibili:play", request),
     getPlayback: (): Promise<BiliPlayback | null> => ipcRenderer.invoke("bilibili:playback"),
     getPlayerState: (): Promise<BiliPlayerState> => ipcRenderer.invoke("bilibili:player-state"),
+    getTransportState: (): Promise<BiliTransportState> => ipcRenderer.invoke("bilibili:transport-state"),
+    setPlaying: (playing: boolean, expectedRevision: number): Promise<BiliTransportState> => ipcRenderer.invoke("bilibili:set-playing", playing, expectedRevision),
+    reportTransportState: (state: BiliTransportReport, commandId?: number): void => ipcRenderer.send("bilibili:transport-report", state, commandId),
+    onTransportState: (callback: (state: BiliTransportState) => void): (() => void) => listen("bilibili:transport-state", callback),
+    onTransportCommand: (callback: (command: BiliTransportCommand) => void): (() => void) => listen("bilibili:transport-command", callback),
     getDanmaku: (cid: number): Promise<BiliDanmaku[]> => ipcRenderer.invoke("bilibili:danmaku", cid),
     setPlayerMode: (mode: BiliMode): Promise<BiliPlayback> => ipcRenderer.invoke("bilibili:mode", mode),
     openVideoPage: (): Promise<void> => ipcRenderer.invoke("bilibili:open-page"),

@@ -75,6 +75,29 @@ body.floating-mode {
 .floating-caption { font-size: 10px; line-height: 14px; color: #7d8f85; white-space: nowrap; }
 .floating-expand { width: 21px; height: 25px; color: #8a9d91; border-radius: 7px; }
 .floating-expand:hover { background: #e4f1ea; color: #168c63; }
+.floating-media-toggle {
+  width: 25px;
+  height: 25px;
+  border: 1px solid #d9ebe1;
+  border-radius: 8px;
+  background: #eaf6ef;
+  color: #19865f;
+}
+.floating-media-toggle:hover { background: #d9efdf; color: #106e49; }
+.floating-media-toggle:disabled { opacity: 0.45; cursor: default; }
+.floating-media-toggle.has-error { border-color: #dabd93; color: #a26a37; }
+.has-media.compact .floating-topline { gap: 6px; }
+.has-media.expanded .floating-topline { gap: 7px; }
+.floating-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .floating-detail { padding: 0 12px 10px; position: relative; }
 .floating-income-row { height: 53px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .floating-income { display: flex; flex-direction: column; min-width: 0; }

@@ -9,6 +9,7 @@ export interface FloatingRectangle extends FloatingPosition {
 }
 
 export const FLOATING_COMPACT = { width: 164, height: 44 } as const;
+export const FLOATING_MEDIA_COMPACT = { width: 200, height: 44 } as const;
 export const FLOATING_EXPANDED = { width: 264, height: 148 } as const;
 const GAP = 16;
 
@@ -29,10 +30,11 @@ export function floatingBounds(
   expanded: boolean,
   workAreas: FloatingRectangle[],
   primaryIndex = 0,
+  mediaActive = false,
 ): FloatingRectangle {
   if (!workAreas.length) throw new Error("没有可用的显示器工作区。");
   let area = workAreas[Math.max(0, Math.min(primaryIndex, workAreas.length - 1))];
-  const size = expanded ? FLOATING_EXPANDED : FLOATING_COMPACT;
+  const size = expanded ? FLOATING_EXPANDED : mediaActive ? FLOATING_MEDIA_COMPACT : FLOATING_COMPACT;
   let point = position ?? {
     x: area.x + area.width - FLOATING_COMPACT.width - GAP,
     y: area.y + GAP,

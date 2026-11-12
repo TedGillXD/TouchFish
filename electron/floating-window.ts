@@ -69,6 +69,7 @@ export async function createFloatingController(options: FloatingOptions) {
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let expectedBounds: Rectangle | undefined;
   let applyingBounds = false;
+  let mediaActive = false;
   let movePending = false;
   let quitting = false;
   let disposed = false;
@@ -127,6 +128,7 @@ export async function createFloatingController(options: FloatingOptions) {
       expanded,
       displays.map((display) => display.workArea),
       displays.findIndex((display) => display.id === screen.getPrimaryDisplay().id),
+      mediaActive,
     );
   }
 
@@ -324,6 +326,14 @@ export async function createFloatingController(options: FloatingOptions) {
     return getState();
   }
 
+  // Media controls are transient; their extra width must not move the saved
+  // compact anchor or persist a preference when the player opens/closes.
+  function setMediaActive(active: boolean): void {
+    if (disposed || mediaActive === active) return;
+    mediaActive = active;
+    applyBounds();
+  }
+
   async function flush(): Promise<void> {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -357,6 +367,7 @@ export async function createFloatingController(options: FloatingOptions) {
     setEnabled,
     setExpanded,
     setPrivacy,
+    setMediaActive,
     initializeWindow,
     flush,
     dispose: () => {

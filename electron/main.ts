@@ -20,7 +20,7 @@ import { createFloatingController } from "./floating-window";
 import { createHolidayService } from "./holiday-service";
 import { createBilibiliService } from "./bilibili-service";
 import { createBilibiliWindow } from "./bilibili-window";
-import type { BiliMode, BiliPlayback, BiliPlayRequest } from "../src/bilibili-types";
+import type { BiliMode, BiliPlayback, BiliPlayRequest, BiliTransportState } from "../src/bilibili-types";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "touchfish-media",
@@ -65,6 +65,21 @@ function mediaController() {
 function assertMediaSender(event: IpcMainInvokeEvent): void {
   if (!trustedSender(event) && !player?.isSender(event))
     throw new Error("无法识别的播放器请求。");
+}
+
+function assertTransportSender(event: IpcMainInvokeEvent): void {
+  if (!trustedSender(event) && !player?.isSender(event) && !floating?.isSender(event))
+    throw new Error("无法识别的播放控制请求。");
+}
+
+function broadcastTransport(state: BiliTransportState): void {
+  // Size the native companion before its renderer receives a new media button.
+  floating?.setMediaActive(state.open);
+  broadcastMedia("bilibili:transport-state", state);
+  const companion = floating?.getWindow();
+  if (companion && !companion.isDestroyed() && !companion.webContents.isDestroyed()) {
+    try { companion.webContents.send("bilibili:transport-state", state); } catch { /* Reload obtains the current state. */ }
+  }
 }
 
 function broadcastMedia(channel: string, value: unknown): void {
@@ -384,6 +399,14 @@ function registerIpc(): void {
   ipcMain.handle("bilibili:play", (event, request: unknown) => { assertMediaSender(event); return playBilibili(request, trustedSender(event)); });
   ipcMain.handle("bilibili:playback", (event) => { assertMediaSender(event); return player?.getPlayback() ?? null; });
   ipcMain.handle("bilibili:player-state", (event) => { assertMediaSender(event); return player!.getState(); });
+  ipcMain.handle("bilibili:transport-state", event => { assertTransportSender(event); return player!.getTransportState(); });
+  ipcMain.handle("bilibili:set-playing", (event, playing: unknown, revision: unknown) => {
+    assertTransportSender(event);
+    return player!.setPlaying(playing, revision);
+  });
+  ipcMain.on("bilibili:transport-report", (event, state: unknown, commandId: unknown) => {
+    if (player?.isSender(event)) player.reportTransportState(state, commandId);
+  });
   ipcMain.handle("bilibili:mode", (event, mode: BiliMode) => {
     assertMediaSender(event);
     const current = player?.getPlayback();
@@ -660,8 +683,10 @@ if (!app.requestSingleInstanceLock()) {
         devServer,
         onState: state => {
           if (!state.open) playbackRequest++;
+          floating?.setMediaActive(state.open);
           broadcastMedia("bilibili:player-state", state);
         },
+        onTransportState: broadcastTransport,
       });
       holidays = await createHolidayService({
         onState: (state) => {
@@ -687,6 +712,7 @@ if (!app.requestSingleInstanceLock()) {
             win.webContents.send("floating:state", state);
         },
       });
+      floating.setMediaActive(player.getState().open);
       updater = createUpdaterController({
         onState: (state) => {
           if (state.status === "error") quitAllowed = false;

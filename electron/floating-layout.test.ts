@@ -41,6 +41,30 @@ test("default placement respects the primary display and taskbar work area", () 
   });
 });
 
+test("media controls gain room without moving the remembered wage-only anchor", () => {
+  const anchor = { x: 1740, y: 970 };
+  const saved = { ...anchor };
+  assert.deepEqual(floatingBounds(anchor, false, [primary], 0, true), {
+    x: 1720, y: 970, width: 200, height: 44,
+  });
+  assert.deepEqual(floatingBounds(anchor, true, [primary], 0, true), {
+    x: 1656, y: 892, width: 264, height: 148,
+  });
+  assert.deepEqual(anchor, saved);
+  assert.deepEqual(floatingBounds(anchor, false, [primary], 0, false), {
+    x: 1740, y: 970, width: 164, height: 44,
+  });
+});
+
+test("media controls remain inside negative and small display work areas", () => {
+  assert.deepEqual(floatingBounds({ x: -180, y: 700 }, false, [primary, left], 0, true), {
+    x: -200, y: 700, width: 200, height: 44,
+  });
+  assert.deepEqual(floatingBounds(undefined, false, [{ x: 50, y: -100, width: 180, height: 40 }], 0, true), {
+    x: 50, y: -100, width: 180, height: 40,
+  });
+});
+
 test("small work areas clamp the window size as well as its position", () => {
   assert.deepEqual(floatingBounds({ x: 800, y: 600 }, true, [
     { x: 100, y: 200, width: 120, height: 90 },

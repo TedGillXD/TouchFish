@@ -1,13 +1,15 @@
 import { BrowserWindow, screen } from "electron";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
-import type { BiliPlayback, BiliPlayerState } from "../src/bilibili-types";
+import type { BiliPlayback, BiliPlayerState, BiliTransportState } from "../src/bilibili-types";
+import { createBilibiliTransport } from "./bilibili-transport";
 
 interface PlayerWindowOptions {
   root: string;
   preload: string;
   devServer?: string;
   onState: (state: BiliPlayerState) => void;
+  onTransportState: (state: BiliTransportState) => void;
 }
 
 /** A normal desktop window: other applications and dialogs can cover it. */
@@ -16,6 +18,14 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
   let loading: Promise<void> | null = null;
   let current: BiliPlayback | null = null;
   let disposed = false;
+  const transport = createBilibiliTransport({
+    onState: options.onTransportState,
+    send: command => {
+      if (!window || window.isDestroyed() || window.webContents.isDestroyed())
+        throw new Error("播放器已关闭。");
+      window.webContents.send("bilibili:transport-command", command);
+    },
+  });
   const getState = (): BiliPlayerState => ({
     open: !!window && !window.isDestroyed(),
     mode: current?.mode ?? "video",
@@ -26,11 +36,12 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
 
   async function open(playback: BiliPlayback, activate = true): Promise<void> {
     if (disposed) throw new Error("播放器已关闭。");
-    current = playback;
     if (loading) await loading;
+    if (disposed) throw new Error("播放器已关闭。");
+    current = { ...playback, transportRevision: transport.beginSource() };
     if (window && !window.isDestroyed()) {
       window.setTitle(`${playback.video.title.slice(0, 100)} · 摸鱼播放器`);
-      window.webContents.send("bilibili:playback", playback);
+      window.webContents.send("bilibili:playback", current);
       if (activate) { window.show(); window.focus(); }
       publish();
       return;
@@ -38,7 +49,8 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
     const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     const width = Math.min(playback.mode === "audio" ? 440 : 720, area.width);
     const height = Math.min(playback.mode === "audio" ? 230 : 405, area.height);
-    const player = new BrowserWindow({
+    let player: BrowserWindow;
+    try { player = new BrowserWindow({
       width, height,
       x: Math.round(area.x + (area.width - width) / 2),
       y: Math.round(area.y + (area.height - height) / 2),
@@ -66,8 +78,9 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
         backgroundThrottling: false,
         autoplayPolicy: "no-user-gesture-required",
       },
-    });
+    }); } catch (error) { current = null; transport.close(); publish(); throw error; }
     window = player;
+    publish();
     player.setMenu(null);
     player.on("page-title-updated", event => event.preventDefault());
     player.on("system-context-menu", event => event.preventDefault());
@@ -75,7 +88,7 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
     player.webContents.on("will-navigate", event => event.preventDefault());
     player.webContents.on("will-attach-webview", event => event.preventDefault());
     player.on("closed", () => {
-      if (window === player) { window = null; current = null; }
+      if (window === player) { window = null; current = null; transport.close(); }
       publish();
     });
     loading = (async () => {
@@ -104,12 +117,15 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
     open,
     getState,
     getPlayback: () => current,
+    getTransportState: transport.getState,
+    setPlaying: transport.setPlaying,
+    reportTransportState: transport.report,
     getWindow: () => window,
     isSender: (event: IpcMainEvent | IpcMainInvokeEvent): boolean => !!window && !window.isDestroyed() &&
       event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame,
     show: () => { if (window && !window.isDestroyed()) { window.show(); window.focus(); } },
     minimize: () => window?.minimize(),
     close: () => window?.close(),
-    dispose: () => { disposed = true; window?.destroy(); window = null; current = null; },
+    dispose: () => { disposed = true; transport.close(); window?.destroy(); window = null; current = null; },
   };
 }

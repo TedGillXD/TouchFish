@@ -95,14 +95,14 @@ export default function BiliPlayer() {
   const api = window.touchFish?.bilibili;
   const [playback, setPlayback] = useState<BiliPlayback | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [buffering, setBuffering] = useState(false);
+  const [buffering, setBufferingValue] = useState(false);
   const [busy, setBusy] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
-  const [error, setError] = useState("");
+  const [error, setErrorValue] = useState("");
   const [danmaku, setDanmaku] = useState(false);
   const [comments, setComments] = useState<BiliDanmaku[]>([]);
   const [danmakuMessage, setDanmakuMessage] = useState("");
@@ -113,6 +113,7 @@ export default function BiliPlayer() {
   const mounted = useRef(false);
   const generation = useRef(0);
   const intent = useRef(false);
+  const intentRevision = useRef(0);
   const positionReady = useRef(false);
   const starting = useRef(false);
   const desiredPosition = useRef(0);
@@ -124,21 +125,52 @@ export default function BiliPlayer() {
   const pending = useRef<{ bvid: string; cid: number; mode: BiliMode; time: number; playing: boolean } | null>(null);
   const retry = useRef({ key: "", count: 0 });
   const commentCache = useRef(new Map<number, BiliDanmaku[]>());
+  const bufferState = useRef(false);
+  const failedState = useRef(false);
+  const endedState = useRef(false);
+  const latestTransportCommand = useRef(0);
+  const setBuffering = useCallback((next: boolean) => {
+    bufferState.current = next;
+    setBufferingValue(next);
+  }, []);
+  const setError = useCallback((next: string) => {
+    failedState.current = !!next;
+    setErrorValue(next);
+  }, []);
 
   const elements = useCallback((): HTMLMediaElement[] => {
     const current = payload.current;
     return [current?.mode === "video" && current.videoUrl ? video.current : null, current?.audioUrl ? audio.current : null]
       .filter((element): element is HTMLMediaElement => !!element);
   }, []);
+  const publishTransport = useCallback((commandId?: number) => {
+    const current = payload.current;
+    const revision = current?.transportRevision;
+    if (!api || !revision || !mounted.current) return;
+    const tracks = elements();
+    const ended = endedState.current || clock.current?.ended === true;
+    const actualPlaying = tracks.length > 0 && tracks.every(track => !track.paused && !track.ended);
+    api.reportTransportState({
+      revision,
+      ready: !changing.current && !pending.current && !failedState.current,
+      playing: intent.current && !ended && actualPlaying,
+      playIntent: intent.current && !ended && !failedState.current,
+      buffering: intent.current && !ended && !failedState.current && (bufferState.current || !actualPlaying),
+      ended,
+      failed: failedState.current,
+    }, commandId);
+  }, [api, elements]);
   const pauseTracks = useCallback(() => {
     for (const element of elements()) element.pause();
     setPlaying(false);
-  }, [elements]);
-  const startTracks = useCallback(async () => {
+    publishTransport();
+  }, [elements, publishTransport]);
+  const startTracks = useCallback(async (): Promise<void> => {
     const tracks = elements();
     if (!intent.current || !positionReady.current || starting.current || changing.current || pending.current || scrub.current ||
       !tracks.length || tracks.some(track => track.readyState < 2 || track.seeking)) return;
     const requestGeneration = generation.current;
+    const requestIntent = intentRevision.current;
     starting.current = true;
     try {
       await Promise.all(tracks.map(track => track.play()));
@@ -148,7 +180,7 @@ export default function BiliPlayer() {
         setError("");
       }
     } catch (cause) {
-      if (mounted.current && requestGeneration === generation.current && intent.current &&
+      if (mounted.current && requestGeneration === generation.current && requestIntent === intentRevision.current && intent.current &&
         !(cause instanceof DOMException && cause.name === "AbortError")) {
         pauseTracks();
         intent.current = false;
@@ -157,8 +189,13 @@ export default function BiliPlayer() {
       }
     } finally {
       if (requestGeneration === generation.current) starting.current = false;
+      if (requestGeneration === generation.current) publishTransport();
+      // A pause can abort an in-flight play(). If the latest explicit command
+      // resumed again meanwhile, retry that intent after releasing the lock.
+      if (mounted.current && requestGeneration === generation.current && requestIntent !== intentRevision.current &&
+        intent.current && !failedState.current && tracks.some(track => track.paused)) void startTracks();
     }
-  }, [elements, pauseTracks]);
+  }, [elements, pauseTracks, publishTransport]);
   const prepare = useCallback(() => {
     const current = payload.current;
     const tracks = elements();
@@ -179,7 +216,8 @@ export default function BiliPlayer() {
     }
     if (intent.current) void startTracks();
     else setBuffering(false);
-  }, [elements, startTracks]);
+    publishTransport();
+  }, [elements, startTracks, publishTransport]);
 
   useEffect(() => {
     mounted.current = true;
@@ -211,6 +249,8 @@ export default function BiliPlayer() {
 
   useEffect(() => {
     generation.current++;
+    latestTransportCommand.current = 0;
+    endedState.current = false;
     starting.current = false;
     positionReady.current = false;
     payload.current = playback;
@@ -230,6 +270,8 @@ export default function BiliPlayer() {
     clock.current = playback?.mode === "video" && playback.videoUrl ? video.current : audio.current;
     prepare();
   }, [playback, prepare]);
+
+  useEffect(() => { publishTransport(); }, [playback, playing, buffering, busy, error, publishTransport]);
 
   useEffect(() => {
     if (video.current) {
@@ -296,6 +338,7 @@ export default function BiliPlayer() {
   }, [changeSource, pauseTracks]);
   const seek = useCallback((target: number) => {
     const next = Math.max(0, Math.min(target, duration));
+    if (next < duration - 0.1) endedState.current = false;
     desiredPosition.current = next;
     pauseTracks();
     setTime(next);
@@ -305,20 +348,49 @@ export default function BiliPlayer() {
       if (Number.isFinite(track.duration) || track.readyState >= 1) track.currentTime = next;
     }
     void startTracks();
-  }, [duration, elements, pauseTracks, startTracks]);
-  const toggle = useCallback(() => {
+    publishTransport();
+  }, [duration, elements, pauseTracks, startTracks, publishTransport]);
+  const requestPlaying = useCallback((shouldPlay: boolean) => {
     if (!payload.current) return;
-    intent.current = !intent.current;
-    if (!intent.current) {
+    intentRevision.current++;
+    intent.current = shouldPlay;
+    if (pending.current) pending.current.playing = shouldPlay;
+    if (!shouldPlay) {
       pauseTracks();
       setBuffering(false);
     } else {
       const master = clock.current;
-      if (master?.ended || master && Number.isFinite(master.duration) && master.currentTime >= master.duration - 0.1) seek(0);
+      if (endedState.current || master?.ended || master && Number.isFinite(master.duration) && master.currentTime >= master.duration - 0.1) {
+        endedState.current = false;
+        seek(0);
+      }
       setBuffering(true);
       void startTracks();
     }
-  }, [pauseTracks, seek, startTracks]);
+    publishTransport();
+  }, [pauseTracks, seek, startTracks, publishTransport]);
+  const toggle = useCallback(() => requestPlaying(!intent.current), [requestPlaying]);
+
+  useEffect(() => {
+    if (!api) return;
+    return api.onTransportCommand(command => {
+      if (!mounted.current || command.revision !== payload.current?.transportRevision ||
+        command.id < latestTransportCommand.current) return;
+      if (command.id !== latestTransportCommand.current) {
+        latestTransportCommand.current = command.id;
+        requestPlaying(command.playing);
+      }
+      // Acknowledgement confirms the accepted intent. Loading/seeking may still
+      // buffer; later reports describe the actual state of both media tracks.
+      publishTransport(command.id);
+    });
+  }, [api, requestPlaying, publishTransport]);
+
+  const trackActivity = useCallback(() => {
+    const tracks = elements();
+    setPlaying(tracks.length > 0 && tracks.every(track => !track.paused && !track.ended));
+    publishTransport();
+  }, [elements, publishTransport]);
   const tick = useCallback((element: HTMLMediaElement) => {
     if (element !== clock.current) return;
     if (!scrub.current) setTime(element.currentTime);
@@ -336,11 +408,13 @@ export default function BiliPlayer() {
   }, [pauseTracks]);
   const ended = useCallback((element: HTMLMediaElement) => {
     if (element !== clock.current) return;
+    endedState.current = true;
     intent.current = false;
     pauseTracks();
     setBuffering(false);
     setTime(element.currentTime);
-  }, [pauseTracks]);
+    publishTransport();
+  }, [pauseTracks, publishTransport]);
   const modeSwitch = async () => {
     const current = payload.current;
     if (!api || !current || changing.current) return;
@@ -400,15 +474,15 @@ export default function BiliPlayer() {
     if (!playback || !("mediaSession" in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({ title: playback.video.title, artist: playback.video.owner, album: "B 站 · 摸鱼时钟" });
     const callbacks: [MediaSessionAction, MediaSessionActionHandler][] = [
-      ["play", () => { intent.current = true; void startTracks(); }],
-      ["pause", () => { intent.current = false; pauseTracks(); }],
+      ["play", () => requestPlaying(true)],
+      ["pause", () => requestPlaying(false)],
       ["seekbackward", event => seek((clock.current?.currentTime || 0) - (event.seekOffset || 5))],
       ["seekforward", event => seek((clock.current?.currentTime || 0) + (event.seekOffset || 5))],
       ["seekto", event => { if (event.seekTime !== undefined) seek(event.seekTime); }],
     ];
     for (const [action, callback] of callbacks) { try { navigator.mediaSession.setActionHandler(action, callback); } catch {} }
     return () => { for (const [action] of callbacks) { try { navigator.mediaSession.setActionHandler(action, null); } catch {} } };
-  }, [playback, startTracks, pauseTracks, seek]);
+  }, [playback, requestPlaying, seek]);
   useEffect(() => {
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = playing ? "playing" : "paused";
   }, [playing]);
@@ -419,9 +493,11 @@ export default function BiliPlayer() {
     <div className={`bili-player ${audioMode ? "audio-mode" : "video-mode"} ${error ? "has-error" : ""}`} tabIndex={0} aria-label="B站播放器" onContextMenu={event => event.preventDefault()}>
       <video ref={video} className="bili-video" src={!audioMode ? playback?.videoUrl ?? undefined : undefined} playsInline preload="auto" disablePictureInPicture
         onLoadedMetadata={prepare} onCanPlay={prepare} onSeeked={prepare} onWaiting={waiting}
+        onPlaying={trackActivity} onPause={trackActivity}
         onTimeUpdate={event => tick(event.currentTarget)} onEnded={event => ended(event.currentTarget)} onError={event => mediaError(event.currentTarget)} />
       <audio ref={audio} src={playback?.audioUrl ?? undefined} preload="auto"
         onLoadedMetadata={prepare} onCanPlay={prepare} onSeeked={prepare} onWaiting={waiting}
+        onPlaying={trackActivity} onPause={trackActivity}
         onTimeUpdate={event => tick(event.currentTarget)} onEnded={event => ended(event.currentTarget)} onError={event => mediaError(event.currentTarget)} />
       {audioMode && <div className="bili-audio-stage">
         {playback?.video.cover && <img className="bili-audio-backdrop" src={playback.video.cover} alt="" />}

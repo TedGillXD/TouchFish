@@ -2,7 +2,7 @@ import type { AppData } from "./core";
 import type { UpdateState } from "./update-types";
 import type { FloatingState } from "./floating-types";
 import type { HolidayState } from "./holiday-types";
-import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo } from "./bilibili-types";
+import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "./bilibili-types";
 
 declare global {
   interface Window {
@@ -26,6 +26,11 @@ declare global {
         play(request: BiliPlayRequest): Promise<BiliPlayback>;
         getPlayback(): Promise<BiliPlayback | null>;
         getPlayerState(): Promise<BiliPlayerState>;
+        getTransportState(): Promise<BiliTransportState>;
+        setPlaying(playing: boolean, expectedRevision: number): Promise<BiliTransportState>;
+        reportTransportState(state: BiliTransportReport, commandId?: number): void;
+        onTransportState(callback: (state: BiliTransportState) => void): () => void;
+        onTransportCommand(callback: (command: BiliTransportCommand) => void): () => void;
         getDanmaku(cid: number): Promise<BiliDanmaku[]>;
         setPlayerMode(mode: BiliMode): Promise<BiliPlayback>;
         openVideoPage(): Promise<void>;

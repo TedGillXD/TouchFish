@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  Pause,
+  Play,
   RotateCcw,
 } from "lucide-react";
 import { emptyData, getDaySummary, normalizeData, type AppData } from "./core";
 import type { FloatingState } from "./floating-types";
+import type { BiliTransportState } from "./bilibili-types";
 import { dateKey } from "./core";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
 
@@ -32,7 +35,15 @@ export default function FloatingWindow() {
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reload, setReload] = useState(0);
+  const [media, setMedia] = useState<BiliTransportState | null>(null);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const mediaSnapshot = useRef<BiliTransportState | null>(null);
+  const mediaMounted = useRef(false);
+  const mediaPending = useRef(false);
+  const mediaOperation = useRef(0);
   const api = window.touchFish?.floating;
+  const mediaApi = window.touchFish?.bilibili;
   useHolidayYears(yearsForDates(dateKey(now)), data?.settings.publicHolidays !== false);
 
   useEffect(() => {
@@ -84,6 +95,50 @@ export default function FloatingWindow() {
   }, [reload]);
 
   useEffect(() => {
+    if (!mediaApi) return;
+    mediaMounted.current = true;
+    let revision = 0;
+    const accept = (next: BiliTransportState) => {
+      if (!mediaMounted.current) return;
+      if (next.revision !== mediaSnapshot.current?.revision || !next.open) {
+        mediaOperation.current++;
+        mediaPending.current = false;
+        setMediaBusy(false);
+        setMediaError("");
+      }
+      mediaSnapshot.current = next;
+      setMedia(next);
+    };
+    const off = mediaApi.onTransportState(next => { revision++; accept(next); });
+    void mediaApi.getTransportState().then(next => {
+      if (revision === 0) accept(next);
+    }).catch(() => {});
+    return () => { mediaMounted.current = false; off(); };
+  }, [mediaApi]);
+
+  const toggleMedia = useCallback(async () => {
+    const current = mediaSnapshot.current;
+    if (!mediaApi || !current?.open || !current.ready || mediaPending.current) return;
+    const operation = ++mediaOperation.current;
+    mediaPending.current = true;
+    setMediaBusy(true);
+    setMediaError("");
+    try {
+      // Native code routes this explicit intent to the current player without
+      // revealing stream URLs or bringing a minimized window to the foreground.
+      await mediaApi.setPlaying(!current.playIntent, current.revision);
+    } catch {
+      if (mediaMounted.current && operation === mediaOperation.current)
+        setMediaError("播放操作失败，请在 B站小窗中重试");
+    } finally {
+      if (mediaMounted.current && operation === mediaOperation.current) {
+        mediaPending.current = false;
+        setMediaBusy(false);
+      }
+    }
+  }, [mediaApi]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -124,7 +179,7 @@ export default function FloatingWindow() {
 
   return (
     <main
-      className={`floating-card ${expanded ? "expanded" : "compact"} ${active && !resting ? "ticking" : ""}`}
+      className={`floating-card ${expanded ? "expanded" : "compact"} ${active && !resting ? "ticking" : ""} ${media?.open ? "has-media" : ""}`}
       aria-label="摸鱼时钟悬浮窗"
       onContextMenu={(event) => {
         event.preventDefault();
@@ -144,6 +199,17 @@ export default function FloatingWindow() {
           {expanded && <span className="floating-caption">今日工作进度</span>}
           <strong className="floating-percent">{compactLabel}</strong>
         </div>
+        {media?.open && <button
+          className={`floating-media-toggle ${media.playIntent ? "playing" : ""} ${mediaError ? "has-error" : ""}`}
+          aria-label={media.playIntent ? "暂停B站播放" : "继续B站播放"}
+          aria-pressed={media.playIntent}
+          aria-describedby={mediaError ? "floating-media-feedback" : undefined}
+          title={mediaError || (media.failed ? "播放异常，请在 B站小窗中重试" : !media.ready ? "B站播放器正在准备" : media.playIntent ? "暂停 B站音视频" : "继续 B站音视频")}
+          disabled={!media.ready || mediaBusy}
+          onClick={() => void toggleMedia()}
+        >
+          {media.playIntent ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+        </button>}
         <button
           className="floating-expand"
           aria-label={loadError ? "重试读取" : expanded ? "收起悬浮窗" : "展开悬浮窗"}
@@ -194,9 +260,10 @@ export default function FloatingWindow() {
               完整面板 <ArrowUpRight size={12} />
             </button>
           </div>
-          {actionError && <span className="floating-action-error" role="alert">{actionError}</span>}
+          {(actionError || mediaError) && <span className="floating-action-error" role="alert">{actionError || mediaError}</span>}
         </div>
       )}
+      {mediaError && <span id="floating-media-feedback" className="floating-sr-only" role="status">{mediaError}</span>}
     </main>
   );
 }

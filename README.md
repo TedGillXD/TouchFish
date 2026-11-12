@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.1-1f9d75?style=flat-square" alt="版本 1.5.1" />
+  <img src="https://img.shields.io/badge/version-1.5.2-1f9d75?style=flat-square" alt="版本 1.5.2" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&amp;logo=electron&amp;logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
@@ -45,9 +45,11 @@ TouchFish 是一款常驻系统托盘的桌面应用。点击托盘图标即可�
 | 假期与发薪倒计时 | 重点色显示距下一个公众假期和调整后发薪日的自然日天数；支持直达对应日历和薪资周期 |
 | 应用更新       | 在设置中检查新版、下载更新包；检查与下载均使用系统代理配置，并校验文件完整性 |
 | 托盘与隐私     | 点击面板外部即可收起，后台继续记录；支持隐藏金额与本地数据备份               |
-| Windows 悬浮窗 | 置顶显示今日计薪进度，展开查看收入、时长与状态；支持拖动、记住位置和同步隐藏金额 |
+| Windows 悬浮窗 | 置顶显示今日计薪进度，展开查看收入、时长与状态；支持拖动、记住位置、隐藏金额及 B 站播放／暂停 |
 | B站摸鱼小窗 | 扫码登录后输入 BV 号听、看视频；无边框小窗可缩放、不置顶，鼠标移入显示播放控制 |
 | 播放与弹幕 | 支持分 P、进度、倍速、可用清晰度、音量和弹幕开关；听视频时仅保留音频流 |
+
+**1.5.2** 为 Windows 悬浮窗增加 B 站播放／暂停控制，视频和听音频均可使用，最小化播放器后也能操作；同时修复 B 站新版扫码地址被误拒绝的问题。
 
 **1.5.1** 修正计薪规则：点击开始立即计薪，按当前至下班的有效秒数分摊日目标；下班或手动结束时补齐该日目标，保留真实计薪时长，并兼容旧版已结束、暂停和等待上班的记录。
 
@@ -131,10 +133,12 @@ Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今
 <p>
   <img src="docs/floating-compact.png" width="164" height="44" alt="Windows 悬浮窗收起状态：今日工作进度 20.2%" />
   <img src="docs/floating-window.png" width="264" height="148" alt="Windows 悬浮窗展开状态：今日收入、计薪时长与工作状态" />
+  <img src="docs/floating-media.png" width="200" height="44" alt="Windows 悬浮窗媒体控制：在工作进度旁暂停或继续 B 站播放" />
 </p>
 
 - 拖动非按钮区域可调整位置，重启后会记住位置；显示器变化时会将窗口移回可见工作区。
 - 点击悬浮窗的图标或「打开完整面板」，可返回主界面开始、暂停或结束工作。
+- 打开 B 站视频或音频后，悬浮窗出现播放／暂停按钮，收起和展开状态均可使用；它只控制媒体播放，不会暂停工资计时。播放器最小化时也可控制，操作不会把小窗强行弹回。关闭播放器后按钮自动隐藏，悬浮窗恢复原宽度。
 - 在主面板隐藏金额后，悬浮窗同步隐藏金额；隐私状态会在重启后保留。
 - 右键点击悬浮窗图标，可展开或收起、隐藏金额、重置位置或隐藏悬浮窗；也可在「偏好设置」或托盘右键菜单中切换显示。隐藏悬浮窗后，后台计时仍继续。
 
@@ -144,7 +148,7 @@ Windows 版默认显示一个绿白色的圆角悬浮窗，收起时只显示今
 
 ### B站摸鱼小窗
 
-当前源码已兼容 B 站新的 `account.bilibili.com` 扫码地址；这一兼容修复尚未包含在已发布的 v1.5.1 安装包中。
+1.5.2 已兼容 B 站新的 `account.bilibili.com` 扫码地址，并保留旧版扫码地址兼容。
 
 点击主面板右上角的「摸鱼」进入 B 站面板。可以先匿名查看公开视频，也可点击「获取二维码」，使用 B 站 App 扫码并在手机确认登录；二维码过期后可重新获取。登录状态保存在本机，点击「退出登录」会清除应用的 B 站登录凭据。
 
