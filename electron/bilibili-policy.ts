@@ -7,6 +7,20 @@ const MIXIN = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,1
 const MEDIA_DOMAINS = ["bilivideo.com", "bilivideo.cn", "hdslb.com"];
 const API_HOSTS = new Set(["api.bilibili.com", "passport.bilibili.com", "www.bilibili.com"]);
 
+/** QR destinations are encoded for the phone, never fetched as API origins. */
+export function trustedBiliQrUrl(value: unknown): URL {
+  const invalid = () => new Error("登录二维码地址无法验证，请重试。");
+  if (typeof value !== "string" || value.length > 2048) throw invalid();
+  let url: URL;
+  try { url = new URL(value); } catch { throw invalid(); }
+  const legacy = ["passport.bilibili.com", "www.bilibili.com"].includes(url.hostname);
+  const accountScan = url.hostname === "account.bilibili.com" &&
+    /^\/h5\/account-h5\/auth\/scan-web\/?$/.test(url.pathname);
+  if (url.protocol !== "https:" || url.username || url.password || url.hash ||
+    (url.port && url.port !== "443") || (!legacy && !accountScan)) throw invalid();
+  return url;
+}
+
 export function normalizeBvid(value: unknown): string {
   if (typeof value !== "string" || value.length > 2048) throw new Error("请输入有效的 BV 号。");
   let input = value.trim();

@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeBvid, normalizeBiliMediaUrl, parseDanmakuXml, safeBiliError, signWbi, trustedBiliApiUrl, trustedBiliMediaUrl } from "./bilibili-policy";
+import { normalizeBvid, normalizeBiliMediaUrl, parseDanmakuXml, safeBiliError, signWbi, trustedBiliApiUrl, trustedBiliMediaUrl, trustedBiliQrUrl } from "./bilibili-policy";
+
+test("QR codes accept the current account scan route and legacy official hosts without trusting arbitrary destinations", () => {
+  const current = trustedBiliQrUrl("https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&qrcode_key=fixture-only");
+  assert.equal(current.hostname, "account.bilibili.com");
+  assert.equal(current.pathname, "/h5/account-h5/auth/scan-web");
+  assert.equal(trustedBiliQrUrl("https://account.bilibili.com:443/h5/account-h5/auth/scan-web/").port, "");
+  for (const host of ["passport.bilibili.com", "www.bilibili.com"])
+    assert.equal(trustedBiliQrUrl(`https://${host}/h5-app/passport/login/scan?qrcode_key=fixture-only`).hostname, host);
+  for (const value of [
+    "http://account.bilibili.com/h5/account-h5/auth/scan-web",
+    "https://account.bilibili.com.evil.example/h5/account-h5/auth/scan-web",
+    "https://account.bilibili.com@evil.example/h5/account-h5/auth/scan-web",
+    "https://user:password@account.bilibili.com/h5/account-h5/auth/scan-web",
+    "https://account.bilibili.com:8443/h5/account-h5/auth/scan-web",
+    "https://account.bilibili.com/unrelated",
+    "https://localhost/h5/account-h5/auth/scan-web",
+    "https://passport.bilibili.com/#fixture-only", "javascript:alert(1)", "not a URL", "x".repeat(2049), null,
+  ]) {
+    assert.throws(() => trustedBiliQrUrl(value), error => {
+      assert.equal((error as Error).message, "登录二维码地址无法验证，请重试。");
+      assert.doesNotMatch((error as Error).message, /fixture-only|password|evil|https?:/);
+      return true;
+    });
+  }
+});
 
 test("BV input accepts a complete ID or official video link without opening an arbitrary URL", () => {
   assert.equal(normalizeBvid("  bv1xx411c7mD  "), "BV1xx411c7mD");

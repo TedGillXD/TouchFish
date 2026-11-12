@@ -27,7 +27,7 @@ await build({
     import {X509Certificate} from 'node:crypto';
     app.setPath('userData', process.env.TOUCHFISH_USER_DATA);
     protocol.registerSchemesAsPrivileged([{scheme:'touchfish-media',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true,stream:true}}]);
-    let mode='good', login='waiting', clock=Date.now(), key=0, navRemaining=0, releaseNav=null;
+    let mode='good', login='waiting', qrAddress='current', clock=Date.now(), key=0, navRemaining=0, releaseNav=null;
     const requests=[];
     const uid=456;
     const bvid='BV1xx411c7mD';
@@ -42,7 +42,22 @@ await build({
         const url=new URL(request.url), path=url.pathname;
         requests.push({host:url.hostname,path,range:request.headers.get('range'),referer:request.headers.get('referer'),cookie:!!request.headers.get('cookie'),signed:url.searchParams.has('w_rid')});
         if(url.hostname==='passport.bilibili.com') {
-          if(path.endsWith('/generate'))return response({code:0,data:{url:'https://passport.bilibili.com/h5-app/passport/login/scan?fixture='+ ++key,qrcode_key:'fixture-key-'+key}});
+          if(path.endsWith('/generate')){
+            const qrKey='fixture-key-'+ ++key;
+            // The current official response encodes an account.bilibili.com
+            // scan page. Only passport remains the network polling endpoint.
+            const addresses={
+              current:'https://account.bilibili.com/h5/account-h5/auth/scan-web',
+              legacy:'https://passport.bilibili.com/h5-app/passport/login/scan',
+              http:'http://account.bilibili.com/h5/account-h5/auth/scan-web',
+              lookalike:'https://account.bilibili.com.evil.invalid/h5/account-h5/auth/scan-web',
+              credential:'https://user:password@account.bilibili.com/h5/account-h5/auth/scan-web',
+              port:'https://account.bilibili.com:444/h5/account-h5/auth/scan-web',
+              wrongPath:'https://account.bilibili.com/unrelated-page',
+              fragment:'https://account.bilibili.com/h5/account-h5/auth/scan-web',
+            };
+            return response({code:0,data:{url:addresses[qrAddress]+'?qrcode_key='+qrKey+(qrAddress==='fragment'?'#fixture-fragment':''),qrcode_key:qrKey}});
+          }
           if(path.endsWith('/poll')) {
             if(login==='expired')return response({code:0,data:{code:86038}});
             if(login==='scanned')return response({code:0,data:{code:86090}});
@@ -128,7 +143,7 @@ await build({
         try{service=await create();}finally{network.cookies.get=readCookies;}
         service.registerMediaProtocol(session.defaultSession);
       };
-      globalThis.biliServiceFixture={get service(){return service;},network,requests,setMode:value=>{mode=value;if(value==='delay-nav')navRemaining=1;},setLogin:value=>{login=value;},advance:value=>{clock+=value;},get navPending(){return !!releaseNav;},releaseNav(fail=false){const resolve=releaseNav;releaseNav=null;resolve?.(fail);},recreate};
+      globalThis.biliServiceFixture={get service(){return service;},network,requests,setMode:value=>{mode=value;if(value==='delay-nav')navRemaining=1;},setLogin:value=>{login=value;},setQrAddress:value=>{qrAddress=value;},advance:value=>{clock+=value;},get navPending(){return !!releaseNav;},releaseNav(fail=false){const resolve=releaseNav;releaseNav=null;resolve?.(fail);},recreate};
       const win=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});await win.loadURL('about:blank');
     }).catch(error=>{console.error(error.message);app.exit(1);});
   `, resolveDir: resolve("."), sourcefile: "bili-service-fixture.ts", loader: "ts" },
@@ -141,6 +156,7 @@ const call = (operation, arg) => desktop.evaluate(async (_electron, { operation,
   const fixture = globalThis.biliServiceFixture;
   if (operation === "mode") return fixture.setMode(arg);
   if (operation === "login") return fixture.setLogin(arg);
+  if (operation === "qrAddress") return fixture.setQrAddress(arg);
   if (operation === "advance") return fixture.advance(arg);
   if (operation === "requests") return fixture.requests;
   if (operation === "recreate") return fixture.recreate(arg);
@@ -157,6 +173,18 @@ try {
   await desktop.firstWindow();
   expect(await call("proxy")).toBe(true);
   expect((await call("getAuth")).status).toBe("logged-out");
+  console.log("Checking current/legacy scan URLs and rejection of untrusted QR addresses...");
+  for (const address of ["http", "lookalike", "credential", "port", "wrongPath", "fragment"]) {
+    await call("qrAddress", address);
+    const rejected = await call("createQr");
+    expect(rejected.status).toBe("error");
+    expect(rejected.qrDataUrl).toBe(null);
+    expect(rejected.message).toMatch(/二维码地址/);
+  }
+  await call("qrAddress", "legacy");
+  expect((await call("createQr")).status).toBe("qr");
+  await call("cancelLogin");
+  await call("qrAddress", "current");
   console.log("Checking QR state transitions, credential isolation and saved login restoration...");
   const qr = await call("createQr");
   expect(qr.status).toBe("qr");
@@ -262,7 +290,8 @@ try {
   await call("createQr");
   await expect.poll(async () => (await call("getAuth")).status).toBe("expired");
   await call("flush");
-  console.log("PASS: QR login states/cancellation/logout, persistent cookies, auth response races and store failure isolation, WBI, real codec selection, opaque media streams, Range/206/referrer, fallback, HTML and redirect rejection, expiration and safe errors.");
+  expect((await call("requests")).some(value => value.host === "account.bilibili.com")).toBe(false);
+  console.log("PASS: current/legacy trusted QR URLs and unsafe address rejection, login states/cancellation/logout, persistent cookies, auth response races and store failure isolation, WBI, real codec selection, opaque media streams, Range/206/referrer, fallback, HTML and redirect rejection, expiration and safe errors.");
 } catch (error) {
   const state = await call("getAuth").catch(() => null);
   console.log(JSON.stringify({ status: state?.status, message: state?.message }));

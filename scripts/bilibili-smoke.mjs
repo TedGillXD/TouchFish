@@ -41,7 +41,7 @@ const fixtureReady=app.whenReady().then(async()=>{
   requests.push({host:url.hostname,path,range:request.headers.get('range'),referer:request.headers.get('referer'),hasCookie:request.headers.has('cookie')});
   const json=(data,headers={})=>new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
   if(url.hostname==='passport.bilibili.com'){
-   if(path.endsWith('/generate'))return json({code:0,data:{url:'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=fixture-qr-key-not-real',qrcode_key:'fixture-qr-key-not-real'}});
+   if(path.endsWith('/generate'))return json({code:0,data:{url:'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=fixture-qr-key-not-real',qrcode_key:'fixture-qr-key-not-real'}});
    if(path.endsWith('/poll')){
     if(qr==='expired')return json({code:0,data:{code:86038}});
     if(qr==='scanned')return json({code:0,data:{code:86090}});

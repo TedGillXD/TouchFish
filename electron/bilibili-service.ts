@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { Readable } from "node:stream";
 import QRCode from "qrcode";
 import type { BiliAuthState, BiliDanmaku, BiliPlayback, BiliPlayRequest, BiliQuality, BiliVideo } from "../src/bilibili-types";
-import { normalizeBvid, normalizeBiliMediaUrl, parseDanmakuXml, safeBiliError, signWbi, trustedBiliApiUrl, trustedBiliMediaUrl } from "./bilibili-policy";
+import { normalizeBvid, normalizeBiliMediaUrl, parseDanmakuXml, safeBiliError, signWbi, trustedBiliApiUrl, trustedBiliMediaUrl, trustedBiliQrUrl } from "./bilibili-policy";
 
 const API = "https://api.bilibili.com";
 const PASSPORT = "https://passport.bilibili.com";
@@ -352,8 +352,7 @@ export async function createBilibiliService(options: BilibiliOptions) {
       const { data } = await json(`${PASSPORT}/x/passport-login/web/qrcode/generate`, { cookies: false, signal: loginRequest.signal });
       if (token !== generation || disposed) return getAuth();
       if (typeof data.qrcode_key !== "string" || !/^[A-Za-z0-9_-]{8,256}$/.test(data.qrcode_key) || typeof data.url !== "string") throw new Error("登录二维码数据不完整，请重试。");
-      const qrUrl = new URL(data.url);
-      if (qrUrl.protocol !== "https:" || qrUrl.username || qrUrl.password || !["passport.bilibili.com", "www.bilibili.com"].includes(qrUrl.hostname)) throw new Error("登录二维码地址无法验证，请重试。");
+      const qrUrl = trustedBiliQrUrl(data.url);
       const qrDataUrl = await QRCode.toDataURL(qrUrl.toString(), { width: 232, margin: 2, errorCorrectionLevel: "M" });
       if (token !== generation || disposed) return getAuth();
       qrKey = data.qrcode_key;
