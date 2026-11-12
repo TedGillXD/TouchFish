@@ -125,8 +125,8 @@ test("cycle earnings include each boundary day once and preserve recorded rates 
     data = startWork(data, localTime(key, "09:00"));
     data = finishWork(data, localTime(key, "10:00"));
   }
-  const first = data.records["2026-11-25"].plan.perSecond * 3600;
-  const second = data.records["2026-11-26"].plan.perSecond * 3600;
+  const first = data.records["2026-11-25"].plan.dailyWage;
+  const second = data.records["2026-11-26"].plan.dailyWage;
   const now = localTime("2026-12-01", "12:00");
   assert.equal(periodEarnings(data, "2026-10-26", "2026-11-25", now), first);
   assert.equal(periodEarnings(data, "2026-11-26", "2026-12-25", now), second);

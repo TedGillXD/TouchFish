@@ -9,6 +9,7 @@ import {
   finishWork,
   getDayPlan,
   getDaySummary,
+  getRecordSummary,
   getPayrollPeriod,
   getNextPayday,
   isWorkday,
@@ -194,14 +195,14 @@ test("manual start, pauses and resumes count only paid seconds once", () => {
   );
 });
 
-test("lunch excluded, before-start clipped and scheduled end caps daily wages", () => {
+test("clicking before the scheduled start pays immediately and excludes lunch until clock-out", () => {
   let data = fixture();
   const day = "2026-11-10";
   data = startWork(data, time(day, "08:30"));
-  assert.equal(getDaySummary(data, time(day, "08:59")).seconds, 0);
-  assert.equal(getDaySummary(data, time(day, "12:30")).seconds, 3 * 3600);
+  assert.equal(getDaySummary(data, time(day, "08:59")).seconds, 29 * 60);
+  assert.equal(getDaySummary(data, time(day, "12:30")).seconds, 3.5 * 3600);
   const full = getDaySummary(data, time(day, "23:59"));
-  assert.equal(full.seconds, 8 * 3600);
+  assert.equal(full.seconds, 8.5 * 3600);
   assert.equal(full.earnings, full.dailyWage);
   assert.equal(full.progress, 1);
   assert.equal(full.status, "completed");
@@ -763,8 +764,8 @@ test("period earnings include both ends across months without repricing history 
     data = pauseWork(data, time(day, "10:00"));
   }
   const expected =
-    data.records["2026-10-30"].plan.perSecond * 3600 +
-    data.records["2026-11-02"].plan.perSecond * 3600;
+    data.records["2026-10-30"].plan.dailyWage +
+    data.records["2026-11-02"].plan.dailyWage;
   data.settings.monthlySalary = 99999;
   assert.equal(
     periodEarnings(
@@ -785,4 +786,198 @@ test("period earnings include both ends across months without repricing history 
     expected,
   );
   assert.equal(periodEarnings(data, "2026-11-25", "2026-10-26"), 0);
+});
+
+test("early and late starts spread the saved daily target over the remaining payable seconds", () => {
+  const day = "2026-11-12";
+  const base = fixture();
+  base.settings.monthlySalary = 21000;
+  for (const [start, denominator] of [["08:30", 30600], ["16:00", 7200]] as const) {
+    const clicked = time(day, start);
+    const data = startWork(base, clicked);
+    const record = data.records[day];
+    assert.equal(record.accrualVersion, 2);
+    assert.equal(record.plan.start, clicked);
+    assert.equal(record.plan.end, time(day, "18:00"));
+    assert.equal(record.plan.dailyWage, 1000);
+    assert.equal(record.plan.plannedSeconds, denominator);
+    assert.equal(record.plan.perSecond, 1000 / denominator);
+    const second = getDaySummary(data, clicked + 1000);
+    assert.equal(second.status, "working");
+    assert.equal(second.seconds, 1);
+    assert.equal(second.earnings, 1000 / denominator);
+    assert.equal(second.progress, 1 / denominator);
+    const restored = normalizeData(JSON.parse(JSON.stringify(data)));
+    assert.deepEqual(restored.records[day], record);
+  }
+});
+
+test("pauses preserve the click rate and clock-out settles the target without inventing worked seconds", () => {
+  const day = "2026-11-12";
+  let data = fixture();
+  data.settings.monthlySalary = 21000;
+  data = startWork(data, time(day, "16:00"));
+  const rate = data.records[day].plan.perSecond;
+  data = pauseWork(data, time(day, "16:00") + 2000);
+  assert.equal(getDaySummary(data, time(day, "16:59")).earnings, rate * 2);
+  data = startWork(data, time(day, "17:00"));
+  assert.equal(data.records[day].plan.perSecond, rate);
+  data = pauseWork(data, time(day, "17:00") + 2000);
+  data = normalizeData(JSON.parse(JSON.stringify(data)));
+  assert.equal(getDaySummary(data, time(day, "17:59")).seconds, 4);
+  assert.equal(getDaySummary(data, time(day, "17:59")).earnings, rate * 4);
+  const settled = getDaySummary(data, time(day, "18:00"));
+  assert.equal(settled.status, "completed");
+  assert.equal(settled.earnings, 1000);
+  assert.equal(settled.progress, 1);
+  assert.equal(settled.remainingSeconds, 0);
+  assert.equal(settled.seconds, 4);
+  assert.equal(monthEarnings(data, 2026, 11, time(day, "18:00")), 1000);
+  assert.equal(periodEarnings(data, day, day, time(day, "18:00")), 1000);
+  const intervals = structuredClone(data.records[day].intervals);
+  data = reconcileData(data, time("2026-11-13", "10:00"));
+  assert.equal(data.records[day].completed, true);
+  assert.deepEqual(data.records[day].intervals, intervals);
+  assert.equal(getDaySummary(data, time("2026-11-13", "10:00")).status, "idle");
+  assert.equal(getDaySummary(data, time("2026-11-13", "10:00")).earnings, 0);
+});
+
+test("manual finish immediately settles the saved target and keeps the actual one-second interval", () => {
+  const day = "2026-11-12", clicked = time(day, "16:00");
+  let data = fixture();
+  data = startWork(data, clicked);
+  const target = data.records[day].plan.dailyWage;
+  data = finishWork(data, clicked + 1000);
+  data.settings.monthlySalary *= 100;
+  const restored = normalizeData(JSON.parse(JSON.stringify(data)));
+  const summary = getDaySummary(restored, clicked + 2000);
+  assert.equal(summary.earnings, target);
+  assert.equal(summary.seconds, 1);
+  assert.equal(summary.progress, 1);
+  assert.equal(periodEarnings(restored, day, day, clicked + 2000), target);
+});
+
+test("existing completed and overdue paused records settle their original targets across every view", () => {
+  const data = fixture();
+  for (const [day, dailyWage, completed] of [["2026-11-11", 900, true], ["2026-11-12", 1100, false]] as const) {
+    const plan = getDayPlan(day, data.settings);
+    data.records[day] = {
+      date: day, plan: { ...plan, dailyWage, perSecond: dailyWage / plan.plannedSeconds }, completed,
+      intervals: [{ from: time(day, "09:00"), to: time(day, "10:00") }],
+    };
+  }
+  data.settings.monthlySalary = 99999;
+  const restored = normalizeData(JSON.parse(JSON.stringify(data)));
+  const now = time("2026-11-13", "08:00");
+  for (const [day, target] of [["2026-11-11", 900], ["2026-11-12", 1100]] as const) {
+    const summary = getRecordSummary(restored, day, now);
+    assert.equal(summary.earnings, target);
+    assert.equal(summary.seconds, 3600);
+    assert.equal(summary.progress, 1);
+  }
+  assert.equal(periodEarnings(restored, "2026-11-11", "2026-11-12", now), 2000);
+  assert.equal(monthEarnings(restored, 2026, 11, now), 2000);
+});
+
+test("meal times are clipped from settings even when the click precedes the configured shift", () => {
+  const day = "2026-11-12";
+  let data = fixture();
+  data.settings.monthlySalary = 21000;
+  data.settings.lunch = { enabled: true, start: "08:00", end: "09:00" };
+  data = startWork(data, time(day, "07:00"));
+  const plan = data.records[day].plan;
+  assert.equal(plan.start, time(day, "07:00"));
+  assert.equal(plan.breakStart, time(day, "08:00"));
+  assert.equal(plan.breakEnd, time(day, "09:00"));
+  assert.equal(plan.plannedSeconds, 10 * 3600);
+  assert.equal(plan.dailyWage, 1000);
+  assert.equal(getDaySummary(data, time(day, "08:30")).seconds, 3600);
+  assert.equal(getDaySummary(data, time(day, "09:30")).seconds, 5400);
+});
+
+test("a click with only a final meal left stays finite and settles at clock-out", () => {
+  const day = "2026-11-12";
+  const base = fixture();
+  base.settings.monthlySalary = 21000;
+  base.settings.weekdayHours[4].end = "18:30";
+  const data = startWork(base, time(day, "18:15"));
+  const restored = normalizeData(JSON.parse(JSON.stringify(data)));
+  assert.equal(restored.records[day].plan.plannedSeconds, 0);
+  assert.equal(restored.records[day].plan.perSecond, 0);
+  assert.equal(getDaySummary(restored, time(day, "18:20")).earnings, 0);
+  const end = getDaySummary(restored, time(day, "18:30"));
+  assert.equal(end.earnings, 1000);
+  assert.equal(end.seconds, 0);
+  assert.equal(end.progress, 1);
+  assert.equal(getDaySummary(finishWork(restored, time(day, "18:20")), time(day, "18:21")).earnings, 1000);
+  assert.equal(getDaySummary(base, time(day, "18:30")).earnings, 0, "an unstarted day earns nothing");
+});
+
+test("legacy pre-shift waiting starts from the upgrade instant without inventing its lost click time", () => {
+  const day = "2026-11-12", now = time(day, "08:30");
+  const data = fixture();
+  const plan = getDayPlan(day, data.settings);
+  data.records[day] = { date: day, plan, completed: false, intervals: [{ from: plan.start, to: null }] };
+  const migrated = reconcileData(normalizeData(data), now);
+  assert.equal(migrated.records[day].accrualVersion, 2);
+  assert.equal(migrated.records[day].plan.start, now);
+  assert.equal(migrated.records[day].plan.dailyWage, plan.dailyWage);
+  assert.deepEqual(migrated.records[day].intervals, [{ from: now, to: null }]);
+  assert.equal(getDaySummary(migrated, now).seconds, 0);
+  assert.equal(getDaySummary(migrated, now + 1000).seconds, 1);
+  assert.equal(reconcileData(migrated, time(day, "08:00")), migrated, "new marker prevents rebasing after clock rollback");
+
+  const paused = normalizeData({ ...data, records: { [day]: { ...data.records[day], intervals: [{ from: plan.start, to: plan.start }] } } });
+  assert.equal(reconcileData(paused, now), paused, "a paused session does not start itself");
+  const resumed = startWork(paused, now);
+  assert.equal(resumed.records[day].plan.start, now);
+  assert.equal(resumed.records[day].intervals.at(-1)?.from, now);
+  assert.equal(getDaySummary(resumed, now + 1000).seconds, 1);
+});
+
+test("legacy earned facts and new clock rollback never reprice or reanchor an existing day", () => {
+  const day = "2026-11-12";
+  let data = startWork(fixture(), time(day, "09:30"));
+  const plan = structuredClone(data.records[day].plan);
+  assert.equal(reconcileData(data, time(day, "09:00")), data);
+  data = pauseWork(data, time(day, "10:00"));
+  delete data.records[day].accrualVersion;
+  const restored = normalizeData(data);
+  const resumed = startWork(restored, time(day, "09:00"));
+  assert.deepEqual(resumed.records[day].plan, plan);
+  assert.equal(getDaySummary(resumed, time(day, "10:00")).seconds, 1800);
+  assert.equal(getDaySummary(resumed, time(day, "10:00")).earnings, plan.perSecond * 1800);
+
+  const short = normalizeData({ ...restored, records: { [day]: {
+    ...restored.records[day], intervals: [{ from: plan.start, to: plan.start + 500 }],
+  } } });
+  assert.deepEqual(startWork(short, time(day, "09:00")).records[day].plan, plan,
+    "even a sub-second closed fact is not a legacy waiting session");
+});
+
+test("history and period totals use the real clock when saved records lie in the future", () => {
+  const day = "2026-11-13";
+  let data = startWork(fixture(), time(day, "09:00"));
+  data = pauseWork(data, time(day, "10:00"));
+  const now = time("2026-11-12", "10:00");
+  const summary = getRecordSummary(data, day, now);
+  assert.equal(summary.status, "paused");
+  assert.equal(summary.earnings, data.records[day].plan.perSecond * 3600);
+  assert.equal(periodEarnings(data, day, day, now), summary.earnings);
+  assert.equal(monthEarnings(data, 2026, 11, now), summary.earnings);
+});
+
+test("normalization rejects empty or corrupt start evidence while retaining a legitimate zero-second finish", () => {
+  const day = "2026-11-12", now = time(day, "19:00");
+  const base = fixture(), plan = getDayPlan(day, base.settings);
+  for (const intervals of [[], [{ from: NaN, to: null }], [{ from: plan.end + 1, to: plan.end + 1 }], [{ from: plan.start, to: plan.start - 1 }]]) {
+    const restored = normalizeData({ ...base, records: { [day]: { date: day, plan, intervals, completed: true } } });
+    assert.equal(restored.records[day], undefined);
+    assert.equal(monthEarnings(restored, 2026, 11, now), 0);
+    assert.equal(getDaySummary(restored, now).earnings, 0);
+  }
+  const zero = finishWork(startWork(base, time(day, "16:00")), time(day, "16:00"));
+  const restored = normalizeData(JSON.parse(JSON.stringify(zero)));
+  assert.equal(getDaySummary(restored, now).seconds, 0);
+  assert.equal(getDaySummary(restored, now).earnings, plan.dailyWage);
 });

@@ -104,16 +104,14 @@ export default function FloatingWindow() {
   const ready = !!summary && !!state && !loadError;
   const expanded = state?.expanded === true;
   const active = ready && summary.status === "working";
-  const beforeStart = active && now < summary.plan.start;
   const inLunch = active && summary.plan.breakStart !== null &&
     summary.plan.breakEnd !== null && now >= summary.plan.breakStart &&
     now < summary.plan.breakEnd;
   const inDinner = active && summary.plan.dinnerStart !== null &&
     summary.plan.dinnerEnd !== null && now >= summary.plan.dinnerStart &&
     now < summary.plan.dinnerEnd;
-  const resting = beforeStart || inLunch || inDinner;
+  const resting = inLunch || inDinner;
   const status = !ready ? (loadError ? "读取失败" : "正在同步")
-    : beforeStart ? "等待上班"
     : inDinner ? "晚饭中"
     : inLunch ? "午休中"
     : summary.status === "working" ? "计时中"

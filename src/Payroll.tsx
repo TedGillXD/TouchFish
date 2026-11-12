@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 import {
   dateKey,
-  getDaySummary,
   getPayrollPeriod,
+  getRecordSummary,
   periodEarnings,
   shiftPayrollPeriod,
   type AppData,
@@ -325,10 +325,7 @@ export function PayrollPanel({
       {keys.length ? (
         <div className="history-list">
           {keys.map((key) => {
-            const summary = getDaySummary(
-              data,
-              key === today ? now : new Date(`${key}T23:59:59`).getTime(),
-            );
+            const summary = getRecordSummary(data, key, now);
             return (
               <div className="history-row" key={key}>
                 <span className="history-icon">
@@ -354,7 +351,7 @@ export function PayrollPanel({
         <div className="payroll-empty">这个周期还没有工作记录</div>
       )}
       <p className="panel-note">
-        按选定周期的日期范围汇总，只有点击开始后的计薪时长会累计。已开始的记录保留原单价与计薪规则；更改周期不会改写历史金额。
+        按选定周期汇总；计薪时长保留实际记录，已结束日期按原日目标结算。已开始的记录保留原日目标与秒薪，更改周期不重定价。
       </p>
     </>
   );

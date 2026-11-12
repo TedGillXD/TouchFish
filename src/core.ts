@@ -59,6 +59,8 @@ export interface DayRecord {
   plan: DayPlan;
   intervals: WorkInterval[];
   completed: boolean;
+  /** New records anchor their wage denominator to the actual first click. */
+  accrualVersion?: 2;
 }
 export interface AppData {
   version: 1;
@@ -656,6 +658,31 @@ export function getDayPlan(key: string, settings: Settings): DayPlan {
   };
 }
 
+/** Keep the daily target and deadline, but start its second-by-second accrual now. */
+function planStartingAt(plan: DayPlan, start: number): DayPlan {
+  const [breakStart, breakEnd] = clippedBreak(start, plan.end, plan.breakStart, plan.breakEnd);
+  const [dinnerStart, dinnerEnd] = clippedBreak(start, plan.end, plan.dinnerStart, plan.dinnerEnd);
+  const unpaid = rangesLength(mergedRanges([[breakStart, breakEnd], [dinnerStart, dinnerEnd]]));
+  const plannedSeconds = Math.max(0, (plan.end - start - unpaid) / 1000);
+  return {
+    ...plan, start, breakStart, breakEnd, dinnerStart, dinnerEnd, plannedSeconds,
+    perSecond: plannedSeconds > 0 ? plan.dailyWage / plannedSeconds : 0,
+  };
+}
+
+function firstClickPlan(key: string, settings: Settings, now: number): DayPlan {
+  const scheduled = getDayPlan(key, settings);
+  // Use the configured meal times, including a meal before the scheduled start.
+  // The first click can legitimately precede that original shift boundary.
+  return planStartingAt({
+    ...scheduled,
+    breakStart: settings.lunch.enabled ? atTime(key, settings.lunch.start) : null,
+    breakEnd: settings.lunch.enabled ? atTime(key, settings.lunch.end) : null,
+    dinnerStart: settings.dinner.enabled ? atTime(key, settings.dinner.start) : null,
+    dinnerEnd: settings.dinner.enabled ? atTime(key, settings.dinner.end) : null,
+  }, now);
+}
+
 /** Sanitize persisted/IPC data; never trust objects coming from storage or a renderer. */
 export function normalizeData(value: unknown): AppData {
   if (!isObject(value) || value.version !== 1) return emptyData();
@@ -715,7 +742,9 @@ export function normalizeData(value: unknown): AppData {
     ]);
     const plannedSeconds =
       (source.end - source.start - rangesLength(excluded)) / 1000;
-    if (plannedSeconds <= 0) continue;
+    // Starting during a meal that lasts until clock-out has no payable seconds.
+    // It is still a started day and settles its snapshotted target at the end.
+    if (plannedSeconds < 0) continue;
     const plan: DayPlan = {
       working: true,
       start: source.start,
@@ -727,7 +756,7 @@ export function normalizeData(value: unknown): AppData {
       plannedSeconds,
       workdays: source.workdays,
       dailyWage: source.dailyWage,
-      perSecond: source.dailyWage / plannedSeconds,
+      perSecond: plannedSeconds > 0 ? source.dailyWage / plannedSeconds : 0,
       // Before payroll-cycle support, records always belonged to their calendar month.
       periodStart:
         validDateKey(source.periodStart) &&
@@ -761,7 +790,8 @@ export function normalizeData(value: unknown): AppData {
     const intervals: WorkInterval[] = [];
     let hasOpen = false;
     for (const interval of raw.intervals.slice(0, 10000)) {
-      if (!isObject(interval) || !finite(interval.from)) continue;
+      if (!isObject(interval) || !finite(interval.from) || interval.from < dayStart || interval.from >= plan.end) continue;
+      if (interval.to !== null && (!finite(interval.to) || interval.to < interval.from)) continue;
       const from = Math.min(plan.end, Math.max(plan.start, interval.from));
       if (interval.to === null && !hasOpen && raw.completed !== true) {
         intervals.push({ from, to: null });
@@ -772,11 +802,13 @@ export function normalizeData(value: unknown): AppData {
           to: Math.min(plan.end, Math.max(from, interval.to)),
         });
     }
+    if (!intervals.length) continue;
     data.records[key] = {
       date: key,
       plan,
       intervals,
       completed: raw.completed === true,
+      ...(raw.accrualVersion === 2 ? { accrualVersion: 2 as const } : {}),
     };
   }
   return data;
@@ -812,11 +844,29 @@ function elapsedSeconds(record: DayRecord, now: number): number {
   );
 }
 
-export function getDaySummary(data: AppData, now = Date.now()): DaySummary {
-  const key = dateKey(now);
+function settled(record: DayRecord, now: number): boolean {
+  return record.intervals.length > 0 && (record.completed || now >= record.plan.end);
+}
+
+function recordEarnings(record: DayRecord, now: number): number {
+  return settled(record, now)
+    ? record.plan.dailyWage
+    : Math.min(record.plan.dailyWage, elapsedSeconds(record, now) * record.plan.perSecond);
+}
+
+function legacyWaiting(record: DayRecord, now: number): boolean {
+  return record.accrualVersion !== 2 && !record.completed &&
+    record.date === dateKey(now) && now < record.plan.start &&
+    record.intervals.every(interval => interval.to === null || interval.to === interval.from);
+}
+
+/** Inspect a saved day against the real clock, including clock rollback. */
+export function getRecordSummary(data: AppData, key: string, now = Date.now()): DaySummary {
+  if (!validDateKey(key)) key = dateKey(now);
   const record = data.records[key];
   const plan = record?.plan ?? getDayPlan(key, data.settings);
   const seconds = record ? elapsedSeconds(record, now) : 0;
+  const fullySettled = !!record && settled(record, now);
   const status: WorkStatus = !plan.working
     ? "rest"
     : record?.completed || now >= plan.end
@@ -830,21 +880,37 @@ export function getDaySummary(data: AppData, now = Date.now()): DaySummary {
     date: key,
     status,
     seconds,
-    earnings: Math.min(plan.dailyWage, seconds * plan.perSecond),
+    earnings: record ? recordEarnings(record, now) : 0,
     plannedSeconds: plan.plannedSeconds,
     dailyWage: plan.dailyWage,
     perSecond: plan.perSecond,
     progress:
-      plan.plannedSeconds > 0 ? Math.min(1, seconds / plan.plannedSeconds) : 0,
-    remainingSeconds: Math.max(0, plan.plannedSeconds - seconds),
+      fullySettled ? 1 : plan.plannedSeconds > 0 ? Math.min(1, seconds / plan.plannedSeconds) : 0,
+    remainingSeconds: fullySettled ? 0 : Math.max(0, plan.plannedSeconds - seconds),
     plan,
   };
+}
+
+export function getDaySummary(data: AppData, now = Date.now()): DaySummary {
+  return getRecordSummary(data, dateKey(now), now);
 }
 
 /** Close old sessions at their scheduled end. Reopening the app never starts a new day. */
 export function reconcileData(data: AppData, now = Date.now()): AppData {
   let records = data.records;
   for (const [key, record] of Object.entries(data.records)) {
+    // Old versions discarded the pre-shift click time and stored a future
+    // interval. Start such a still-waiting session from this upgrade instant;
+    // never invent time before now, reprice earned work, or rebase new records
+    // merely because the system clock moved backwards.
+    if (legacyWaiting(record, now) && record.intervals.some(interval => interval.to === null && interval.from > now)) {
+      if (records === data.records) records = { ...records };
+      records[key] = {
+        ...record, accrualVersion: 2, plan: planStartingAt(record.plan, now),
+        intervals: record.intervals.map(interval => interval.to === null ? { from: now, to: null } : interval),
+      };
+      continue;
+    }
     if (now < record.plan.end || record.completed) continue;
     if (records === data.records) records = { ...records };
     records[key] = {
@@ -863,21 +929,24 @@ export function reconcileData(data: AppData, now = Date.now()): AppData {
 export function startWork(data: AppData, now = Date.now()): AppData {
   const current = reconcileData(data, now);
   const key = dateKey(now);
-  const existing = current.records[key];
-  const plan = existing?.plan ?? getDayPlan(key, current.settings);
+  let existing = current.records[key];
+  if (existing && legacyWaiting(existing, now) && !existing.intervals.some(interval => interval.to === null))
+    existing = { ...existing, accrualVersion: 2, plan: planStartingAt(existing.plan, now) };
+  const scheduled = existing?.plan ?? getDayPlan(key, current.settings);
   if (
-    !plan.working ||
-    plan.plannedSeconds <= 0 ||
-    now >= plan.end ||
+    !scheduled.working ||
+    now >= scheduled.end ||
     existing?.completed ||
     existing?.intervals.some((interval) => interval.to === null)
   )
     return current;
+  const plan = existing?.plan ?? firstClickPlan(key, current.settings, now);
   const record: DayRecord = existing ?? {
     date: key,
     plan,
     intervals: [],
     completed: false,
+    accrualVersion: 2,
   };
   return {
     ...current,
@@ -940,15 +1009,12 @@ export function monthEarnings(
     .reduce(
       (total, [, record]) =>
         total +
-        Math.min(
-          record.plan.dailyWage,
-          elapsedSeconds(record, now) * record.plan.perSecond,
-        ),
+        recordEarnings(record, now),
       0,
     );
 }
 
-/** Sum actual recorded earnings in an inclusive date range without repricing historical records. */
+/** Sum recorded earnings and completed-day settlements using each day's saved target. */
 export function periodEarnings(
   data: AppData,
   start: string,
@@ -961,10 +1027,7 @@ export function periodEarnings(
     .reduce(
       (total, [, record]) =>
         total +
-        Math.min(
-          record.plan.dailyWage,
-          elapsedSeconds(record, now) * record.plan.perSecond,
-        ),
+        recordEarnings(record, now),
       0,
     );
 }

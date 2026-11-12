@@ -39,6 +39,7 @@ import {
   getDaySummary,
   getNextPayday,
   getPayrollPeriod,
+  getRecordSummary,
   isWorkday,
   monthDays,
   periodEarnings,
@@ -221,6 +222,7 @@ function App() {
     month = date.getMonth() + 1;
   const days = currentPeriod.workdays;
   const today = todayKey;
+  const hasTodayRecord = !!data.records[today];
   const working = summary.status === "working";
   const lunch =
     working &&
@@ -235,20 +237,17 @@ function App() {
     now >= summary.plan.dinnerStart &&
     now < summary.plan.dinnerEnd;
   const mealBreak = lunch || dinner;
-  const beforeStart = working && now < summary.plan.start;
   const status = mealBreak
     ? dinner
       ? "晚饭中"
       : "午休中"
-    : beforeStart
-      ? "等待上班"
-      : {
-          idle: "待开工",
-          working: "正在工作",
-          paused: "已暂停",
-          completed: "已下班",
-          rest: "休息日",
-        }[summary.status];
+    : {
+        idle: "待开工",
+        working: "正在工作",
+        paused: "已暂停",
+        completed: "已下班",
+        rest: "休息日",
+      }[summary.status];
   let elapsedWorkdays = 0;
   const elapsedDate = new Date(`${currentPeriod.start}T12:00:00`);
   while (
@@ -399,7 +398,7 @@ function App() {
               </span>
             </div>
             <section
-              className={`earnings-card ${working && !mealBreak && !beforeStart ? "is-working" : ""}`}
+              className={`earnings-card ${working && !mealBreak ? "is-working" : ""}`}
             >
               <div className="card-heading">
                 <span>
@@ -478,40 +477,46 @@ function App() {
                   <strong>
                     {summary.status === "rest"
                       ? "今天，给自己放个假"
-                      : `${startTime} — ${nextEnd}`}
+                      : hasTodayRecord
+                        ? `${startTime} — ${nextEnd}`
+                        : summary.status === "completed"
+                          ? "今日未开始计薪"
+                          : `现在 — ${nextEnd}`}
                   </strong>
                   <small title={mealSchedule || undefined}>
                     {summary.status === "completed"
-                      ? "今日记录已保存，明天继续"
+                      ? hasTodayRecord
+                        ? "今日目标已结算，明天继续"
+                        : "明天点击开始后再计薪"
                       : mealBreak
                         ? `${dinner ? "晚饭" : "午休"}至 ${clockTime(activeMealEnd)}，期间不计薪`
-                        : beforeStart
-                          ? `${startTime} 自动开始计薪`
-                          : summary.status === "paused"
-                            ? "暂停期间不计薪，随时继续"
-                            : mealSchedule
-                              ? `${mealSchedule} · 自动扣除`
-                              : "按实际工作时间计薪"}
+                        : summary.status === "paused"
+                          ? "暂停期间不计薪，下班时补齐目标"
+                          : mealSchedule
+                            ? `${mealSchedule} · 自动扣除`
+                            : "从点击时刻计薪，到点结算"}
                   </small>
                 </div>
                 <span className="hours-tag">
-                  {(summary.plannedSeconds / 3600).toFixed(1).replace(".0", "")}
-                  h
+                  {hasTodayRecord
+                    ? `${(summary.plannedSeconds / 3600).toFixed(1).replace(".0", "")}h`
+                    : "—"}
                 </span>
               </div>
               <div className="work-actions">
-                {working ? (
+                {working || summary.status === "paused" ? (
                   <>
                     <button
                       className="primary"
-                      onClick={() => mutate(pauseWork)}
+                      onClick={() => mutate(working ? pauseWork : startWork)}
                     >
-                      <Pause size={17} fill="currentColor" />
-                      暂停计时
+                      {working ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
+                      {working ? "暂停计时" : "继续工作"}
+                      {!working && <span>让收入继续走</span>}
                     </button>
                     <button
                       className="finish-button"
-                      title="结束今天的工作"
+                      title="结束并结算今日目标"
                       onClick={() => setConfirmFinish(true)}
                     >
                       <Flag size={16} />
@@ -534,12 +539,7 @@ function App() {
                 ) : (
                   <button className="primary" onClick={() => mutate(startWork)}>
                     <Play size={17} fill="currentColor" />
-                    {summary.status === "paused" ? "继续工作" : "开始工作"}
-                    <span>
-                      {summary.status === "paused"
-                        ? "让收入继续走"
-                        : "开启今天的积累"}
-                    </span>
+                    开始工作<span>开启今天的积累</span>
                   </button>
                 )}
               </div>
@@ -551,12 +551,14 @@ function App() {
                         : "节假日尚未完整获取，工作日与发薪日暂为估算"} <ChevronRight size={11} />
                     </button>
                   : summary.status === "completed"
-                  ? "下班后停止计薪 · 跨天后可重新开始"
-                  : summary.status === "rest"
-                    ? "需要加班？在日历中将今天设为工作日"
-                    : working
-                      ? `${nextEnd} 自动结束计薪 · 收起窗口后继续记录`
-                      : "点击后开始计薪 · 到下班时间自动结束"}
+                    ? hasTodayRecord
+                      ? "今日目标已结算 · 跨天后可重新开始"
+                      : "今天未开始计薪 · 明天可重新开始"
+                    : summary.status === "rest"
+                      ? "需要加班？在日历中将今天设为工作日"
+                      : working
+                        ? `${nextEnd} 自动结算日目标 · 收起后继续记录`
+                        : "点击即计薪 · 下班时补齐今日目标"}
               </p>
             </section>
 
@@ -731,10 +733,7 @@ function App() {
                 .sort()
                 .reverse()
                 .map((key) => {
-                  const s = getDaySummary(
-                    data,
-                    key === today ? now : new Date(`${key}T23:59:59`).getTime(),
-                  );
+                  const s = getRecordSummary(data, key, now);
                   return (
                     <div className="history-row" key={key}>
                       <span className="history-icon">
@@ -766,7 +765,7 @@ function App() {
               )}
             </div>
             <p className="panel-note">
-              仅统计点击开始后的计薪时长；尚未打卡的日期不会补算。
+              时长保留实际计薪记录；已结束的日期按当日日目标结算，未开始的日期不补算。
             </p>
           </>
         )}
@@ -801,8 +800,8 @@ function App() {
             </span>
             <h2 id="finish-title">今天就到这里？</h2>
             <p>
-              今天已记录的 ¥{cash(summary.earnings)}{" "}
-              会保留。下班后，今天将不能再次开始。
+              今日金额将从 ¥{cash(summary.earnings)} 补齐至日目标 ¥{cash(summary.dailyWage)}。
+              计薪时长保留实际记录，结束后今天不能再次开始。
             </p>
             <div>
               <button
@@ -1144,10 +1143,10 @@ function SettingsPanel({
         <p>
           日薪 = 月薪 ÷ 计薪周期工作日
           <br />
-          秒薪 = 日薪 ÷ 当天计薪秒数
+          秒薪 = 日薪 ÷ 开始至下班的有效秒数
           <br />
           <span>
-            当天首次开始时锁定计薪标准；修改设置从尚未开始的日期生效。金额为税前估算。
+            点击即计薪，首次开始时锁定日目标与秒薪；结束时补齐日目标。修改设置从尚未开始的日期生效，金额为税前估算。
           </span>
         </p>
       </div>
