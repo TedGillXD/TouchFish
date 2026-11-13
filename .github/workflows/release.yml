@@ -134,10 +134,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/boss-key-smoke.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify backup import export and recovery
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/data-management-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package native installers and update metadata
         run: npx electron-builder ${{ matrix.target }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify packaged Windows data management and media controls
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: |
+          node scripts/leisure-packaged-smoke.mjs "release/win-unpacked/摸鱼时钟.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify both macOS application signatures
         if: matrix.platform == 'darwin'
         shell: bash
@@ -199,14 +211,14 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          ## 1.5.3 更新内容
+          ## 1.6.0 更新内容
 
-          - 新增 B 站搜索与播放历史：有效 BV 号在搜索后即保存在本机，无需登录或先播放；同一视频合并为一条，补充标题、UP 主及最近搜索／播放时间，重启后仍可查看。
-          - 历史记录支持点击重新查找、恢复上次选择的分 P、单条删除及确认清空。删除不会停止当前播放，也不会被迟到的网络回包或播放器后台刷新重新加回。
-          - 新增可配置的全局老板键：Windows / Linux 默认 `Ctrl + Alt + B`，macOS 默认 `⌘ + ⌥ + B`。一键暂停摸鱼媒体并收起应用相关窗口，工资继续计时；从托盘恢复窗口后保持暂停。
-          - 老板键冲突或保存失败时保留原可用快捷键；重复按键仍保持收起，加载中的播放请求也不会在随后弹回窗口。
-          - 调整 Windows 悬浮窗的原生关闭时序，关闭窗口后保存隐藏设置。
-          - 保留 1.5.2 的悬浮窗播放控制与 B 站新版扫码地址修复，以及点击即计薪、结束补齐、三端安装包和系统代理更新。
+          - 新增「数据管理」：将工资与排班设置、工作记录、B 站历史及界面偏好导出为 JSON；导出不打断当前计薪，登录 Cookie 与 Git 凭据不进入备份。
+          - 导入先预览数据摘要，确认前不修改本机数据；可选择是否同时恢复悬浮窗和老板键偏好。覆盖前自动保留恢复副本，失败时尝试回退，并支持恢复导入前的数据。
+          - 兼容旧版 `state.json`，保留未包含的视频历史和偏好；导入不会自动继续计时或计入另一台设备的离线时段，旧页面迟到的自动保存也不会覆盖恢复的数据。
+          - 新增个人 Git 仓库备份：支持 HTTPS／SSH 私有仓库，手动检查、上传和下载恢复。固定备份文件为 `touchfish-backup.json`，保留仓库其它文件和旧提交；远端并发变更时停止上传，不覆盖其它设备的新数据。
+          - Git 备份需要本机已安装 Git 并完成仓库认证，应用沿用系统 Git／SSH 身份，不保存访问令牌。网络和代理使用 Git 自身配置，系统 PAC 不会自动转交给 Git。
+          - 保留 1.5.3 的 B 站历史记录、老板键和悬浮窗关闭改进，以及工资计时、节假日、发薪周期和系统代理更新；升级继续使用现有本地设置与工作记录。
 
           YouTube 浏览器扩展入口仍属实验功能，需在 Chrome / Edge 手动加载应用附带的配套扩展并连接浏览器。真实账号登录和 YouTube 网络播放尚未完成实机验收。
 
