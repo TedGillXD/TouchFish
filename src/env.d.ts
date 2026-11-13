@@ -7,6 +7,7 @@ import type { MediaControlApi } from "./media-types";
 import type { YouTubeBridge } from "./youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "./bilibili-types";
 import type { BiliHistoryState } from "./bilibili-history-types";
+import type { DataManagementApi } from "./data-management-types";
 
 declare global {
   interface Window {
@@ -21,6 +22,7 @@ declare global {
       setLogin(enabled: boolean): Promise<void>;
       onSettings(callback: () => void): () => void;
       updateStatus?(message: string): void;
+      dataManagement: DataManagementApi;
       bossKey: BossKeyApi;
       media: MediaControlApi;
       youtube: YouTubeBridge;

@@ -8,6 +8,9 @@ import type { MediaProvider, MediaTransportState } from "../src/media-types";
 import type { YouTubeBrowser, YouTubePlayerState } from "../src/youtube-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "../src/bilibili-types";
 import type { BiliHistoryState } from "../src/bilibili-history-types";
+import type { BackupPreview, DataManagementState, GitSyncConfig } from "../src/data-management-types";
+
+const dataSession = globalThis.crypto.randomUUID();
 
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
@@ -18,9 +21,9 @@ function listen<T>(channel: string, callback: (value: T) => void): () => void {
 // Expose individual operations; never expose ipcRenderer or Node to the page.
 contextBridge.exposeInMainWorld("touchFish", {
   platform: process.platform,
-  loadData: (): Promise<AppData | null> => ipcRenderer.invoke("data:load"),
+  loadData: (): Promise<AppData | null> => ipcRenderer.invoke("data:load", dataSession),
   saveData: (data: AppData): Promise<void> =>
-    ipcRenderer.invoke("data:save", data),
+    ipcRenderer.invoke("data:save", data, dataSession),
   onData: (callback: (data: AppData) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: AppData) => callback(data);
     ipcRenderer.on("data:changed", listener);
@@ -33,6 +36,19 @@ contextBridge.exposeInMainWorld("touchFish", {
     ipcRenderer.invoke("login:set", enabled),
   updateStatus: (message: string): void =>
     ipcRenderer.send("tray:status", message),
+  dataManagement: {
+    getState: (): Promise<DataManagementState> => ipcRenderer.invoke("backup:get"),
+    exportBackup: (): Promise<{ canceled: boolean; fileName?: string }> => ipcRenderer.invoke("backup:export"),
+    previewImport: (): Promise<BackupPreview | null> => ipcRenderer.invoke("backup:preview-file"),
+    previewRemote: (): Promise<BackupPreview> => ipcRenderer.invoke("backup:preview-remote"),
+    previewRecovery: (): Promise<BackupPreview> => ipcRenderer.invoke("backup:preview-recovery"),
+    restorePreview: (id: string, preferences = true): Promise<void> => ipcRenderer.invoke("backup:restore", id, preferences),
+    cancelPreview: (id: string): Promise<void> => ipcRenderer.invoke("backup:cancel", id),
+    configureGit: (config: GitSyncConfig | null): Promise<DataManagementState> => ipcRenderer.invoke("backup:git-configure", config),
+    checkGit: (): Promise<DataManagementState> => ipcRenderer.invoke("backup:git-check"),
+    uploadGit: (): Promise<DataManagementState> => ipcRenderer.invoke("backup:git-upload"),
+    onState: (callback: (state: DataManagementState) => void) => listen("backup:state", callback),
+  },
   bossKey: {
     getState: (): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:get"),
     setShortcut: (shortcut: string): Promise<BossKeyState> => ipcRenderer.invoke("boss-key:set-shortcut", shortcut),

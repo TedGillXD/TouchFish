@@ -60,6 +60,7 @@ import FloatingSettings from "./FloatingSettings";
 import BilibiliPanel from "./BilibiliPanel";
 import YouTubePanel from "./YouTubePanel";
 import BossKeySettings from "./BossKeySettings";
+import DataManagementPanel from "./DataManagementPanel";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -1143,6 +1144,7 @@ function SettingsPanel({
       )}
       <BossKeySettings />
       <FloatingSettings />
+      <DataManagementPanel hasUnsavedSettings={JSON.stringify(draft) !== JSON.stringify(settings)} />
       <UpdatePanel
         hasUnsavedSettings={JSON.stringify(draft) !== JSON.stringify(settings)}
       />

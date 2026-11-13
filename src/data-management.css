@@ -1,0 +1,45 @@
+.data-management .data-description,
+.data-management .data-hint { margin: 9px 0 0; font-size: 10px; line-height: 1.8; color: #8d9991; }
+.data-management .data-description { margin-top: -5px; }
+.data-management .data-local-actions,
+.data-management .data-cloud-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+.data-management .data-local-actions > button,
+.data-management .data-cloud-actions > button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-height: 32px; padding: 7px 10px; border: 1px solid #e1ebe5; border-radius: 8px; background: #f6faf7; color: #398b67; font-size: 10px; line-height: 1.4; }
+.data-management button:disabled { opacity: .45; cursor: default; }
+.data-management .data-cloud { border-top: 1px solid #edf1ee; margin-top: 18px; padding-top: 16px; }
+.data-management .data-cloud-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.data-management .data-cloud-heading h3 { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; font-weight: 550; color: #5e7567; }
+.data-management .data-cloud-heading h3 svg { color: #85a090; }
+.data-management .data-git-status { margin-left: auto; color: #a58c69; font-size: 9px; }
+.data-management .data-git-status.available { color: #6c9e82; }
+.data-management .data-git-field { display: block; margin-top: 12px; }
+.data-management .data-git-field > span { display: block; margin-bottom: 7px; font-size: 10px; color: #89978f; }
+.data-management .data-git-field input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #e3e9e6; border-radius: 8px; background: #f9fbfa; color: #476752; font: inherit; font-size: 10px; user-select: text; }
+.data-management .data-git-field input::placeholder { color: #b0bbb4; }
+.data-management .data-git-field input:disabled { opacity: .6; }
+.data-management .data-git-grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; }
+.data-management .data-config-actions { display: flex; align-items: center; gap: 10px; margin-top: 11px; }
+.data-management .data-config-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 7px 10px; border: 1px solid #dce9e1; border-radius: 8px; background: #eef7f1; color: #30855e; font-size: 10px; }
+.data-management .data-config-note { color: #a4977b; font-size: 9px; line-height: 1.7; }
+.data-management .data-cloud-actions > button { flex: 1; padding-left: 6px; padding-right: 6px; white-space: nowrap; }
+.data-management .data-status { margin: 13px 0 0; display: flex; align-items: flex-start; gap: 6px; padding: 9px 10px; border-radius: 8px; background: #f4f8f5; color: #6b927b; font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
+.data-management .data-status svg { flex: 0 0 auto; margin-top: 3px; }
+.data-management .data-error { color: #a57951; background: #fcf7ef; }
+.data-management .data-unsaved { color: #a58a62; font-size: 10px; line-height: 1.8; margin: 12px 0 0; }
+.data-management .data-preview { margin-top: 15px; border: 1px solid #e1eae4; border-radius: 10px; background: #f8fbf9; padding: 12px; }
+.data-management .data-preview > h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; color: #547860; font-size: 11px; font-weight: 550; }
+.data-management .data-preview > h3 svg { color: #85a090; }
+.data-management .data-preview dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 12px; margin: 0; font-size: 10px; line-height: 1.6; }
+.data-management .data-preview dt { color: #95a198; }
+.data-management .data-preview dd { margin: 0; color: #657f6e; text-align: right; overflow-wrap: anywhere; }
+.data-management .data-preview-note { color: #9b987d; font-size: 9px; line-height: 1.9; margin: 11px 0 0; }
+.data-management .data-preview-actions { display: flex; justify-content: flex-end; align-items: center; gap: 11px; margin-top: 12px; }
+.data-management .data-preview-actions .text-button { font-size: 10px; }
+.data-management .data-preview-actions .primary { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 7px 10px; font-size: 10px; border-radius: 8px; }
+.data-management .data-loader { animation: data-spin 1s linear infinite; }
+@keyframes data-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .data-management .data-loader { animation: none; } }
+.data-preferences-choice { display: flex; align-items: center; gap: 7px; margin: 10px 0; color: #678674; font-size: 10px; }
+.data-preferences-choice input { accent-color: #19986e; }
+.data-preview { scroll-margin-top: 12px; }
+.data-preview:focus-visible { outline: 2px solid #79b99a; outline-offset: 2px; }

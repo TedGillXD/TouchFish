@@ -15,7 +15,9 @@ import {
 import type { IpcMainEvent, IpcMainInvokeEvent, Rectangle } from "electron";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { normalizeData, type AppData } from "../src/core";
+import { emptyData, normalizeData, type AppData } from "../src/core";
+import { createDataManagement } from "./data-management";
+import { createDataBackup, type DataBackup, type BackupPreferences } from "./data-backup-policy";
 import { createUpdaterController } from "./updater";
 import { createFloatingController } from "./floating-window";
 import { createHolidayService } from "./holiday-service";
@@ -70,6 +72,11 @@ let player: ReturnType<typeof createBilibiliWindow> | null = null;
 let playbackRequest = 0;
 let youtube: Awaited<ReturnType<typeof createYouTubeWindow>> | null = null;
 let bossKey: Awaited<ReturnType<typeof createBossKeyController>> | null = null;
+let dataManagement: Awaited<ReturnType<typeof createDataManagement>> | null = null;
+let importingData = false;
+let awaitingRestoredDocument = false;
+let mainDataSession: string | null = null;
+let dataDialogOpen = false;
 let leisureSuppressed = false;
 let leisureEpoch = 0;
 let concealedMain: boolean | null = null;
@@ -375,6 +382,80 @@ function saveState(value: unknown): Promise<void> {
   });
 }
 
+function portablePreferences(): BackupPreferences {
+  const state = floating?.getState();
+  return {
+    ...(bossKey ? { bossShortcut: bossKey.getState().shortcut } : {}),
+    ...(state ? { floating: { enabled: state.enabled, expanded: state.expanded, privacy: state.privacy } } : {}),
+  };
+}
+
+async function captureDataBackup(): Promise<DataBackup> {
+  await writeQueue;
+  await biliHistory?.flush().catch(() => {});
+  await bossKey?.flush();
+  await floating?.flush();
+  const history = biliHistory?.getState();
+  if (history?.error) throw new Error("视频历史尚未完整读取或保存，请先处理历史记录错误后再备份。");
+  return createDataBackup({
+    appVersion: app.getVersion(), data: liveData ?? await loadState() ?? emptyData(),
+    history: history?.entries ?? [], preferences: portablePreferences(),
+  });
+}
+
+async function applyPortablePreferences(value?: BackupPreferences): Promise<void> {
+  if (!value) return;
+  if (value.bossShortcut !== undefined) await bossKey?.setShortcut(value.bossShortcut);
+  if (value.floating && floating) {
+    await floating.setPrivacy(value.floating.privacy);
+    await floating.setExpanded(value.floating.expanded);
+    if (floating.getState().supported) await floating.setEnabled(value.floating.enabled);
+  }
+}
+
+async function applyDataBackup(backup: DataBackup): Promise<void> {
+  if (importingData) throw new Error("数据正在恢复，请稍后重试。");
+  importingData = true;
+  awaitingRestoredDocument = false;
+  let before: { data: AppData; history: ReturnType<NonNullable<typeof biliHistory>["getState"]>["entries"]; preferences: BackupPreferences } | null = null;
+  try {
+    await writeQueue;
+    await biliHistory?.flush().catch(() => {});
+    before = {
+      data: structuredClone(liveData ?? await loadState() ?? emptyData()),
+      history: biliHistory?.getState().entries ?? [], preferences: portablePreferences(),
+    };
+    historyClearVersion++;
+    historyDeletionVersions.clear();
+    await applyPortablePreferences(backup.preferences);
+    if (backup.history !== undefined) await biliHistory?.replace(backup.history);
+    await saveState(backup.data);
+    awaitingRestoredDocument = true;
+    // A new document receives the imported snapshot. Its private session ID
+    // also prevents a late autosave from the old React draft overwriting it.
+    setImmediate(() => {
+      if (quitPending) return;
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.reload();
+    });
+  } catch {
+    let rollbackFailed = false;
+    if (before) {
+      for (const restore of [
+        () => applyPortablePreferences(before!.preferences),
+        () => backup.history !== undefined ? biliHistory?.replace(before!.history) : Promise.resolve(),
+        () => saveState(before!.data),
+      ]) {
+        try { await restore(); } catch { rollbackFailed = true; }
+      }
+    }
+    importingData = false;
+    awaitingRestoredDocument = false;
+    throw new Error(rollbackFailed
+      ? "恢复未完成，部分写入未能回退；导入前的恢复副本已保留，请检查磁盘权限后使用恢复导入前数据。"
+      : "恢复未完成，原有数据已保留。若快捷键被占用，可取消恢复偏好设置后重试。");
+  }
+}
+
 function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(value, Math.max(low, high)));
 }
@@ -491,6 +572,8 @@ function showWindow(settings = false): void {
 async function requestQuit(): Promise<void> {
   if (quitPending) return;
   quitPending = true;
+  // Network sync can be canceled; local restore/export writes still finish in flush.
+  dataManagement?.dispose();
   await writeQueue;
   await holidays?.flush().catch(() => {});
   await bilibili?.flush().catch(() => {});
@@ -498,6 +581,7 @@ async function requestQuit(): Promise<void> {
   await youtube?.pauseAndHide().catch(() => {});
   await youtube?.flush().catch(() => {});
   await bossKey?.flush().catch(() => {});
+  await dataManagement?.flush().catch(() => {});
   try {
     await floating?.flush();
   } catch {
@@ -514,6 +598,20 @@ async function requestQuit(): Promise<void> {
 }
 
 function registerIpc(): void {
+  const manager = () => {
+    if (!dataManagement) throw new Error("数据管理尚未就绪，请稍后重试。");
+    return dataManagement;
+  };
+  ipcMain.handle("backup:get", event => { assertTrusted(event); return manager().getState(); });
+  ipcMain.handle("backup:export", event => { assertTrusted(event); return manager().exportBackup(); });
+  ipcMain.handle("backup:preview-file", event => { assertTrusted(event); return manager().previewImport(); });
+  ipcMain.handle("backup:preview-remote", event => { assertTrusted(event); return manager().previewRemote(); });
+  ipcMain.handle("backup:preview-recovery", event => { assertTrusted(event); return manager().previewRecovery(); });
+  ipcMain.handle("backup:restore", (event, id: unknown, preferences: unknown = true) => { assertTrusted(event); return manager().restorePreview(id, preferences); });
+  ipcMain.handle("backup:cancel", (event, id: unknown) => { assertTrusted(event); return manager().cancelPreview(id); });
+  ipcMain.handle("backup:git-configure", (event, config) => { assertTrusted(event); return manager().configureGit(config); });
+  ipcMain.handle("backup:git-check", event => { assertTrusted(event); return manager().checkGit(); });
+  ipcMain.handle("backup:git-upload", event => { assertTrusted(event); return manager().uploadGit(); });
   ipcMain.handle("boss-key:get", event => { assertTrusted(event); return bossKey!.getState(); });
   ipcMain.handle("boss-key:set-shortcut", (event, shortcut: unknown) => { assertTrusted(event); return bossKey!.setShortcut(shortcut); });
   ipcMain.handle("boss-key:trigger", event => {
@@ -675,15 +773,23 @@ function registerIpc(): void {
       throw error;
     }
   });
-  ipcMain.handle("data:load", async (event) => {
+  ipcMain.handle("data:load", async (event, session: unknown) => {
     const isFloating = floating?.isSender(event);
     if (!trustedSender(event) && !isFloating)
       throw new Error("无法识别的应用请求。");
+    if (trustedSender(event)) {
+      if (typeof session !== "string" || !/^[a-f0-9-]{36}$/i.test(session)) throw new Error("数据会话无效，请重新打开面板。");
+      if (importingData && (!awaitingRestoredDocument || session === mainDataSession)) throw new Error("数据正在恢复，请等待面板重新加载。");
+      mainDataSession = session;
+      if (awaitingRestoredDocument) { awaitingRestoredDocument = false; importingData = false; }
+    }
     await writeQueue;
     return isFloating && liveData ? liveData : loadState();
   });
-  ipcMain.handle("data:save", async (event, value: unknown) => {
+  ipcMain.handle("data:save", async (event, value: unknown, session: unknown) => {
     assertTrusted(event);
+    if (importingData || typeof session !== "string" || session !== mainDataSession)
+      throw new Error("数据会话已更新，旧面板的记录未覆盖恢复的数据。");
     await saveState(value);
   });
   ipcMain.handle("login:get", (event) => {
@@ -758,7 +864,7 @@ async function createWindow(): Promise<void> {
   });
   win.setMenu(null);
   win.on("blur", () => {
-    if (keepOpen) return;
+    if (keepOpen || dataDialogOpen) return;
     lastBlur = Date.now();
     // A programmatic hide can emit blur after the click handler. Only a blur
     // from a still-visible popup belongs to a fresh tray click.
@@ -870,6 +976,7 @@ if (!app.requestSingleInstanceLock()) {
     /* A tray app remains active without visible windows. */
   });
   app.on("will-quit", () => {
+    dataManagement?.dispose();
     bossKey?.dispose();
     youtube?.dispose();
     bilibili?.dispose();
@@ -933,6 +1040,26 @@ if (!app.requestSingleInstanceLock()) {
         onRepeatTrigger: repeatConcealLeisure,
         onState: (state: BossKeyState) => broadcastMedia("boss-key:state", state),
       });
+      dataManagement = await createDataManagement({
+        directory: app.getPath("userData"), capture: captureDataBackup, apply: applyDataBackup,
+        chooseImport: async () => {
+          const options = { title: "导入摸鱼时钟备份", properties: ["openFile"] as ["openFile"], filters: [{ name: "JSON 备份", extensions: ["json"] }] };
+          dataDialogOpen = true;
+          try {
+            const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+            return result.canceled ? null : result.filePaths[0] ?? null;
+          } finally { dataDialogOpen = false; }
+        },
+        chooseExport: async suggestedName => {
+          const options = { title: "导出摸鱼时钟备份", defaultPath: suggestedName, filters: [{ name: "JSON 备份", extensions: ["json"] }] };
+          dataDialogOpen = true;
+          try {
+            const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+            return result.canceled ? null : result.filePath ?? null;
+          } finally { dataDialogOpen = false; }
+        },
+        onState: state => sendMain("backup:state", state),
+      });
       updater = createUpdaterController({
         onState: (state) => {
           if (state.status === "error") quitAllowed = false;
@@ -940,6 +1067,7 @@ if (!app.requestSingleInstanceLock()) {
             win.webContents.send("updater:state", state);
         },
         beforeInstall: async () => {
+          await dataManagement?.flush();
           await writeQueue;
           await bilibili?.flush();
           await biliHistory?.flush().catch(() => {});

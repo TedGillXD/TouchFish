@@ -7,6 +7,31 @@ import type { BiliPlayback, BiliVideo } from "../src/bilibili-types";
 import type { BiliHistoryEntry, BiliHistoryState } from "../src/bilibili-history-types";
 
 const A = "BV17x411w7KC", B = "BV1xx411c7mD";
+
+test("backup replacement replaces history membership and late metadata cannot resurrect removed rows", async () => {
+  const f = await fixture();
+  await f.controller.recordSearch(A);
+  const imported: BiliHistoryEntry = { bvid: B, title: "导入的视频", owner: "UP", duration: 10,
+    lastSearchedAt: 100, lastPlayedAt: null, lastMode: null, lastCid: null };
+  await f.controller.replace([imported]);
+  await f.controller.recordVideo(video(A));
+  assert.deepEqual(f.controller.getState().entries, [imported]);
+  imported.title = "修改调用方对象";
+  assert.equal(f.controller.getState().entries[0].title, "导入的视频");
+  await assert.rejects(f.controller.replace([{ bvid: "bad" }]));
+  assert.equal(f.controller.getState().entries[0].bvid, B);
+});
+
+test("a failed backup history replacement keeps the previously committed entries", async () => {
+  let rejectWrite = false;
+  const f = await fixture({ write: async () => { if (rejectWrite) throw new Error("private write error"); } });
+  await f.controller.recordSearch(A);
+  const before = f.controller.getState().entries;
+  rejectWrite = true;
+  await assert.rejects(f.controller.replace([]), /保存失败/);
+  assert.deepEqual(f.controller.getState().entries, before);
+  assert.doesNotMatch(f.controller.getState().error!, /private/);
+});
 const video = (bvid = A): BiliVideo => ({ bvid, title: "一段公开视频", owner: "UP 主", duration: 120, cover: "https://i0.hdslb.com/cover.jpg",
   pages: [{ cid: 101, page: 1, title: "第一部分", duration: 120 }] });
 const playback = (bvid = A): BiliPlayback => ({ video: video(bvid), cid: 101, mode: "video", quality: 16, qualities: [{ id: 16, label: "360P" }],

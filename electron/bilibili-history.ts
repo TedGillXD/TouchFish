@@ -122,6 +122,9 @@ export async function createBilibiliHistory(options: HistoryOptions) {
 
   return {
     getState,
+    replace(value: unknown) {
+      return enqueue(() => commit(readEntries({ version: 1, entries: value })));
+    },
     recordSearch(input: unknown) {
       return enqueue(async () => {
         assertReadable();

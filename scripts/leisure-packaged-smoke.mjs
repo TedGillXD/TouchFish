@@ -18,9 +18,22 @@ try {
   await expect.poll(() => desktop.windows().some(page => page.url().endsWith("/index.html"))).toBe(true);
   const main = desktop.windows().find(page => page.url().endsWith("/index.html"));
   await expect(main.getByText("今日已赚", { exact: true })).toBeVisible();
+  const management = await main.evaluate(() => window.touchFish.dataManagement.getState());
+  expect(management.git.config).toBeNull();
+  expect(management.busy).toBe(false);
+  await main.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(main.getByRole("region", { name: "数据管理", exact: true }).getByRole("button", { name: "导出备份", exact: true })).toBeEnabled();
+  await main.getByRole("button", { name: "设置", exact: true }).click();
   const state = await main.evaluate(() => window.touchFish.youtube.getState());
   expect(state.connected).toBe(false); expect(state.open).toBe(false);
-  const shortcut = await main.evaluate(() => window.touchFish.bossKey.getState());
+  let shortcut = await main.evaluate(() => window.touchFish.bossKey.getState());
+  // The user's installed app can own the default key while this isolated
+  // packaged test is running. Reserve an uncommon key only in our test data.
+  if (!shortcut.registered) {
+    for (const key of ["CommandOrControl+Alt+Shift+F10", "CommandOrControl+Alt+Shift+F11", "CommandOrControl+Alt+Shift+F9"]) {
+      try { shortcut = await main.evaluate(key => window.touchFish.bossKey.setShortcut(key), key); break; } catch { /* Try another unowned combination. */ }
+    }
+  }
   expect(shortcut.registered).toBe(true);
   await main.evaluate(() => window.touchFish.bossKey.trigger());
   await expect.poll(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible() || window.isMinimized()))).toBe(true);
