@@ -274,7 +274,9 @@ try {
   await pinned(true);
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
     .find(window => window.webContents.getURL().includes("window=player")).setSize(320, 180));
-  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 320) <= 1 && Math.abs(innerHeight - 180) <= 1)).toBe(true);
+  // The Windows client viewport can round a few pixels differently from the
+  // native bounds at fractional display scaling.
+  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 320) <= 3 && Math.abs(innerHeight - 180) <= 3)).toBe(true);
   await hover();
   await expect(player.getByRole("button", { name: "取消置顶", exact: true })).toBeVisible();
   expect(await player.locator(".bili-window-actions button").evaluateAll(buttons => buttons.every(button => {
@@ -287,7 +289,7 @@ try {
   await pinned(true);
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
     .find(window => window.webContents.getURL().includes("window=player")).setSize(800, 450));
-  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 800) <= 1 && Math.abs(innerHeight - 450) <= 1)).toBe(true);
+  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 800) <= 3 && Math.abs(innerHeight - 450) <= 3)).toBe(true);
   await hover();
 
   console.log("Checking hover controls, pause, seeking, rate, quality, parts and danmaku...");
