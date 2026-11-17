@@ -118,7 +118,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/payday-rest-smoke.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify Bilibili login playback and player pin
+      - name: Verify Bilibili login playback and pinned window controls
         if: matrix.platform == 'win32'
         timeout-minutes: 5
         run: |

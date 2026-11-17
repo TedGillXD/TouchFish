@@ -76,6 +76,18 @@ async function hover() {
   await player.mouse.move(size.width / 2, size.height / 2);
   await expect(player.locator(".bili-player-top")).toHaveCSS("opacity", "1");
 }
+async function hoverAfterNativeResize() {
+  // Windows reconciles the OS cursor after a native setSize, independently of
+  // the renderer resize. Do not click until synthetic hover survives that pass.
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await expect(async () => {
+    const size = await player.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    await player.mouse.move(size.width / 2, size.height / 2);
+    await expect(player.locator(".bili-player-top")).toHaveCSS("opacity", "1", { timeout: 500 });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await expect(player.locator(".bili-player-top")).toHaveCSS("opacity", "1", { timeout: 200 });
+  }).toPass({ timeout: 6000, intervals: [100, 250, 500] });
+}
 async function pinned(enabled) {
   await expect.poll(() => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
     .find(window => window.webContents.getURL().includes("window=player"))?.isAlwaysOnTop())).toBe(enabled);
@@ -277,7 +289,7 @@ try {
   // The Windows client viewport can round a few pixels differently from the
   // native bounds at fractional display scaling.
   await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 320) <= 3 && Math.abs(innerHeight - 180) <= 3)).toBe(true);
-  await hover();
+  await hoverAfterNativeResize();
   await expect(player.getByRole("button", { name: "取消置顶", exact: true })).toBeVisible();
   expect(await player.locator(".bili-window-actions button").evaluateAll(buttons => buttons.every(button => {
     const box = button.getBoundingClientRect();
@@ -290,7 +302,7 @@ try {
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
     .find(window => window.webContents.getURL().includes("window=player")).setSize(800, 450));
   await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 800) <= 3 && Math.abs(innerHeight - 450) <= 3)).toBe(true);
-  await hover();
+  await hoverAfterNativeResize();
 
   console.log("Checking hover controls, pause, seeking, rate, quality, parts and danmaku...");
   await player.evaluate(() => document.activeElement?.blur());
