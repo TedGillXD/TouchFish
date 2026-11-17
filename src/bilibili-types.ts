@@ -31,7 +31,7 @@ export interface BiliPlayback {
   expiresAt: number;
 }
 export interface BiliDanmaku { time: number; text: string; color: number; mode: number }
-export interface BiliPlayerState { open: boolean; mode: BiliMode; title: string; bvid: string | null }
+export interface BiliPlayerState { open: boolean; mode: BiliMode; title: string; bvid: string | null; alwaysOnTop: boolean }
 
 /** Minimal, non-sensitive media status shared with the wage companion. */
 export interface BiliTransportReport {

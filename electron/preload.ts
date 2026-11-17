@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld("touchFish", {
     play: (request: BiliPlayRequest): Promise<BiliPlayback> => ipcRenderer.invoke("bilibili:play", request),
     getPlayback: (): Promise<BiliPlayback | null> => ipcRenderer.invoke("bilibili:playback"),
     getPlayerState: (): Promise<BiliPlayerState> => ipcRenderer.invoke("bilibili:player-state"),
+    setAlwaysOnTop: (enabled: boolean): Promise<BiliPlayerState> => ipcRenderer.invoke("bilibili:always-on-top", enabled),
     getTransportState: (): Promise<BiliTransportState> => ipcRenderer.invoke("bilibili:transport-state"),
     setPlaying: (playing: boolean, expectedRevision: number): Promise<BiliTransportState> => ipcRenderer.invoke("bilibili:set-playing", playing, expectedRevision),
     reportTransportState: (state: BiliTransportReport, commandId?: number): void => ipcRenderer.send("bilibili:transport-report", state, commandId),

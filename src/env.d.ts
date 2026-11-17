@@ -39,6 +39,7 @@ declare global {
         play(request: BiliPlayRequest): Promise<BiliPlayback>;
         getPlayback(): Promise<BiliPlayback | null>;
         getPlayerState(): Promise<BiliPlayerState>;
+        setAlwaysOnTop(enabled: boolean): Promise<BiliPlayerState>;
         getTransportState(): Promise<BiliTransportState>;
         setPlaying(playing: boolean, expectedRevision: number): Promise<BiliTransportState>;
         reportTransportState(state: BiliTransportReport, commandId?: number): void;

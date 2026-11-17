@@ -12,7 +12,7 @@ interface PlayerWindowOptions {
   onTransportState: (state: BiliTransportState) => void;
 }
 
-/** A normal desktop window: other applications and dialogs can cover it. */
+/** A normal desktop window with an optional, per-window pin above other apps. */
 export function createBilibiliWindow(options: PlayerWindowOptions) {
   let window: BrowserWindow | null = null;
   let loading: Promise<void> | null = null;
@@ -41,6 +41,7 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
     mode: current?.mode ?? "video",
     bvid: current?.video.bvid ?? null,
     title: current?.video.title ?? "",
+    alwaysOnTop: !!window && !window.isDestroyed() && window.isAlwaysOnTop(),
   });
   const publish = () => options.onState(getState());
 
@@ -147,6 +148,7 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
     player.setMenu(null);
     player.on("page-title-updated", event => event.preventDefault());
     player.on("system-context-menu", event => event.preventDefault());
+    player.on("always-on-top-changed", publish);
     player.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     player.webContents.on("will-navigate", event => event.preventDefault());
     player.webContents.on("will-attach-webview", event => event.preventDefault());
@@ -179,6 +181,15 @@ export function createBilibiliWindow(options: PlayerWindowOptions) {
   return {
     open,
     getState,
+    setAlwaysOnTop: (enabled: unknown): BiliPlayerState => {
+      if (typeof enabled !== "boolean") throw new Error("置顶设置无效。");
+      if (privacyPaused) throw new Error("摸鱼窗口已收起，请先从托盘恢复窗口。");
+      if (!window || window.isDestroyed()) throw new Error("请先打开播放器。");
+      // Changing the stacking level must not show, focus or resume the window.
+      window.setAlwaysOnTop(enabled);
+      publish();
+      return getState();
+    },
     getPlayback: () => current,
     getTransportState: () => publicTransport(transport.getState()),
     setPlaying: (playing: unknown, revision: unknown) => privacyPaused && playing === true

@@ -72,8 +72,16 @@ async function playing(mode) {
   await expect.poll(async () => { const value = await media(); return mode === "video" ? value.video.ready >= 2 && value.audio.ready >= 2 && !value.video.paused && !value.audio.paused : value.audio.ready >= 2 && !value.audio.paused && !value.video.source; }, { timeout: 15000 }).toBe(true);
 }
 async function hover() {
-  const size = player.viewportSize() ?? await player.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  const size = await player.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   await player.mouse.move(size.width / 2, size.height / 2);
+  await expect(player.locator(".bili-player-top")).toHaveCSS("opacity", "1");
+}
+async function pinned(enabled) {
+  await expect.poll(() => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .find(window => window.webContents.getURL().includes("window=player"))?.isAlwaysOnTop())).toBe(enabled);
+  await expect.poll(() => main.evaluate(async () => (await window.touchFish.bilibili.getPlayerState()).alwaysOnTop)).toBe(enabled);
+  await expect(player.getByRole("button", { name: enabled ? "取消置顶" : "置顶播放器", exact: true, includeHidden: true }))
+    .toHaveAttribute("aria-pressed", String(enabled));
 }
 async function openPlayer(mode) {
   await main.getByRole("button", { name: mode === "video" ? "看视频" : "听视频", exact: true }).click();
@@ -82,6 +90,7 @@ async function openPlayer(mode) {
   player.setDefaultTimeout(15000);
   player.on("pageerror", error => errors.push(error.message));
   await expect(player.locator(".bili-player")).toBeVisible();
+  await pinned(false);
 }
 async function closePlayer() {
   const lastTransport = floating ? await transport() : null;
@@ -90,6 +99,7 @@ async function closePlayer() {
   await player.getByRole("button", { name: "关闭播放器", exact: true }).click().catch(error => { if (!player.isClosed()) throw error; });
   await closed;
   await expect.poll(() => desktop.windows().some(page => page.url().includes("window=player"))).toBe(false);
+  expect((await main.evaluate(() => window.touchFish.bilibili.getPlayerState())).alwaysOnTop).toBe(false);
   if (floating) {
     await expect.poll(async () => (await transport()).open).toBe(false);
     await expect(floating.locator(".floating-media-toggle")).toHaveCount(0);
@@ -173,11 +183,12 @@ try {
         video: await denied(() => window.touchFish.bilibili.getVideo("BV17x411w7KC")),
         play: await denied(() => window.touchFish.bilibili.play({ bvid: "BV17x411w7KC", mode: "video" })),
         mode: await denied(() => window.touchFish.bilibili.setPlayerMode("audio")),
+        pin: await denied(() => window.touchFish.bilibili.setAlwaysOnTop(true)),
         save: await denied(() => window.touchFish.saveData({})),
         update: await denied(() => window.touchFish.updater.check()),
       };
     });
-    expect(privacyBoundary).toEqual({ auth: true, qr: true, source: true, video: true, play: true, mode: true, save: true, update: true });
+    expect(privacyBoundary).toEqual({ auth: true, qr: true, source: true, video: true, play: true, mode: true, pin: true, save: true, update: true });
     const currentTransport = await transport();
     expect(JSON.stringify(currentTransport)).not.toMatch(/touchfish-media|SESSDATA|fixture-only|qrcode_key|title|bvid/);
     await expect(floating.evaluate(async revision => window.touchFish.bilibili.setPlaying("invalid", revision), currentTransport.revision)).rejects.toThrow();
@@ -238,6 +249,47 @@ try {
   expect(Math.abs(native.bounds.width - 800)).toBeLessThanOrEqual(1);
   expect(Math.abs(native.bounds.height - 450)).toBeLessThanOrEqual(1);
 
+  console.log("Checking native pin toggle, narrow-window controls and unchanged playback...");
+  const beforePin = await media();
+  const beforePinTransport = await main.evaluate(() => window.touchFish.bilibili.getTransportState());
+  await hover();
+  await player.getByRole("button", { name: "置顶播放器", exact: true }).click();
+  await pinned(true);
+  await playing("video");
+  const afterPin = await media();
+  expect({ video: afterPin.video.source, audio: afterPin.audio.source })
+    .toEqual({ video: beforePin.video.source, audio: beforePin.audio.source });
+  expect(afterPin.video.time).toBeGreaterThanOrEqual(beforePin.video.time - 0.1);
+  expect((await main.evaluate(() => window.touchFish.bilibili.getTransportState())).revision).toBe(beforePinTransport.revision);
+  for (const value of ["true", null, 1]) {
+    expect(await player.evaluate(async value => {
+      try { await window.touchFish.bilibili.setAlwaysOnTop(value); return false; } catch { return true; }
+    }, value)).toBe(true);
+  }
+  await pinned(true);
+  await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .find(window => window.webContents.getURL().includes("window=player")).setAlwaysOnTop(false));
+  await pinned(false);
+  await player.getByRole("button", { name: "置顶播放器", exact: true }).click();
+  await pinned(true);
+  await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .find(window => window.webContents.getURL().includes("window=player")).setSize(320, 180));
+  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 320) <= 1 && Math.abs(innerHeight - 180) <= 1)).toBe(true);
+  await hover();
+  await expect(player.getByRole("button", { name: "取消置顶", exact: true })).toBeVisible();
+  expect(await player.locator(".bili-window-actions button").evaluateAll(buttons => buttons.every(button => {
+    const box = button.getBoundingClientRect();
+    return box.width > 0 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+  }))).toBe(true);
+  await player.getByRole("button", { name: "取消置顶", exact: true }).click();
+  await pinned(false);
+  await player.getByRole("button", { name: "置顶播放器", exact: true }).click();
+  await pinned(true);
+  await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .find(window => window.webContents.getURL().includes("window=player")).setSize(800, 450));
+  await expect.poll(() => player.evaluate(() => Math.abs(innerWidth - 800) <= 1 && Math.abs(innerHeight - 450) <= 1)).toBe(true);
+  await hover();
+
   console.log("Checking hover controls, pause, seeking, rate, quality, parts and danmaku...");
   await player.evaluate(() => document.activeElement?.blur());
   await player.mouse.move(-20, -20);
@@ -265,6 +317,7 @@ try {
   await expect.poll(() => player.evaluate(async () => (await window.touchFish.bilibili.getPlayback()).quality)).toBe(16);
   await playing("video");
   expect((await media()).video.time).toBeGreaterThanOrEqual(beforeQuality - 0.3);
+  await pinned(true);
   if (floating) {
     await expect.poll(async () => (await transport()).revision).toBeGreaterThan(beforeQualityTransport.revision);
     await expect(floating.evaluate(async revision => window.touchFish.bilibili.setPlaying(false, revision), beforeQualityTransport.revision)).rejects.toThrow();
@@ -274,6 +327,7 @@ try {
   await expect.poll(() => player.evaluate(async () => (await window.touchFish.bilibili.getPlayback()).cid)).toBe(102);
   await playing("video");
   expect((await media()).video.time).toBeLessThan(4);
+  await pinned(true);
   const danmakuButton = player.getByRole("button", { name: "打开弹幕", exact: true });
   if (await danmakuButton.count()) await danmakuButton.click();
   await expect(player.getByRole("button", { name: "关闭弹幕", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -287,6 +341,7 @@ try {
   const beforeMode = (await media()).video.time;
   await player.getByRole("button", { name: "只听音频", exact: true }).click();
   await playing("audio");
+  await pinned(true);
   expect((await media()).audio.time).toBeGreaterThanOrEqual(beforeMode - 0.3);
   expect((await media()).video.paused).toBe(true);
   await player.getByRole("button", { name: "最小化播放器", exact: true }).click();
@@ -297,6 +352,12 @@ try {
     await window.touchFish.bilibili.play({ bvid: playback.video.bvid, mode: playback.mode, cid: playback.cid, quality: 16 });
   });
   await playing("audio");
+  expect(await minimized()).toBe(true);
+  const pinWhileMinimized = await main.evaluate(() => window.touchFish.bilibili.setAlwaysOnTop(false));
+  expect(pinWhileMinimized.alwaysOnTop).toBe(false);
+  expect(await minimized()).toBe(true);
+  await main.evaluate(() => window.touchFish.bilibili.setAlwaysOnTop(true));
+  await pinned(true);
   expect(await minimized()).toBe(true);
   const minimizedTime = (await media()).audio.time;
   await expect.poll(async () => (await media()).audio.time).toBeGreaterThan(minimizedTime + 0.2);
@@ -322,6 +383,7 @@ try {
   }
   await main.evaluate(() => window.touchFish.bilibili.showPlayer());
   await expect.poll(minimized).toBe(false);
+  await pinned(true);
   await hover();
   expect(await player.evaluate(async () => {
     const denied = async callback => { try { await callback(); return false; } catch { return true; } };
@@ -329,6 +391,7 @@ try {
   })).toEqual({ save: true, update: true });
   await player.getByRole("button", { name: "切换到视频", exact: true }).click();
   await playing("video");
+  await pinned(true);
   if (floating) {
     console.log("Checking ended playback restarts from the floating button without loading a new stream...");
     await hover();
@@ -370,7 +433,7 @@ try {
   expect(cdn.some(request => request.range)).toBe(true);
   expect(cdn.every(request => request.referer === "https://www.bilibili.com/" && !request.hasCookie)).toBe(true);
   expect(errors).toEqual([]);
-  console.log("PASS: QR login states/persistence/logout, BV lookup, decoded split playback, range/referrer, buffered stalled events, resize/non-topmost window, hover controls, pause/seek/rate/quality/parts, danmaku, floating transport/state/source isolation, independent wage timer, ended replay, audio-only/minimized playback, protected IPC and media failure recovery.");
+  console.log("PASS: QR login states/persistence/logout, BV lookup, decoded split playback, range/referrer, buffered stalled events, resize, native pin toggle/default reset/narrow controls/source preservation, hover controls, pause/seek/rate/quality/parts, danmaku, floating transport/state/source isolation, independent wage timer, ended replay, audio-only/minimized playback, protected IPC and media failure recovery.");
   console.log(`Isolated data: ${userData}`);
 } finally {
   await close();

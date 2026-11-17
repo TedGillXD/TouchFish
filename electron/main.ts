@@ -701,6 +701,11 @@ function registerIpc(): void {
   ipcMain.handle("bilibili:play", (event, request: unknown) => { assertMediaSender(event); return playBilibili(request, trustedSender(event)); });
   ipcMain.handle("bilibili:playback", (event) => { assertMediaSender(event); return player?.getPlayback() ?? null; });
   ipcMain.handle("bilibili:player-state", (event) => { assertMediaSender(event); return player!.getState(); });
+  ipcMain.handle("bilibili:always-on-top", (event, enabled: unknown) => {
+    assertMediaSender(event);
+    assertLeisureAvailable();
+    return player!.setAlwaysOnTop(enabled);
+  });
   ipcMain.handle("bilibili:transport-state", event => { assertTransportSender(event); return player!.getTransportState(); });
   ipcMain.handle("bilibili:set-playing", (event, playing: unknown, revision: unknown) => {
     assertTransportSender(event);

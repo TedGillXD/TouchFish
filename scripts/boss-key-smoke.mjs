@@ -50,7 +50,7 @@ const media = () => player.evaluate(() => [...document.querySelectorAll("video,a
   tag: element.tagName, time: element.currentTime, paused: element.paused, ready: element.readyState, source: element.getAttribute("src"),
 })));
 const windows = () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => ({
-  url: window.webContents.getURL(), visible: window.isVisible(), minimized: window.isMinimized(),
+  url: window.webContents.getURL(), visible: window.isVisible(), minimized: window.isMinimized(), alwaysOnTop: window.isAlwaysOnTop(),
 })));
 async function allSheltered() {
   await expect.poll(async () => (await windows()).every(window => !window.visible || window.minimized)).toBe(true);
@@ -92,8 +92,15 @@ try {
   await expect(main.getByRole("button", { name: "暂停计时", exact: true })).toBeVisible();
 
   console.log("Checking actual shortcut registration and conflict-safe configuration...");
-  const initial = await boss();
+  let initial = await boss();
   expect(initial.shortcut).toBe("CommandOrControl+Alt+B");
+  // An installed copy may own the default key. Only reserve another key for
+  // this isolated test instance; do not disturb the user's running app.
+  if (!initial.registered) {
+    for (const key of ["CommandOrControl+Alt+Shift+F10", "CommandOrControl+Alt+Shift+F11", "CommandOrControl+Alt+Shift+F9"]) {
+      try { initial = await main.evaluate(key => window.touchFish.bossKey.setShortcut(key), key); break; } catch { /* Try another unowned combination. */ }
+    }
+  }
   expect(initial.registered).toBe(true);
   expect(await desktop.evaluate((_electron, shortcut) => globalThis.bossShortcutProbe.registered(shortcut), initial.shortcut)).toBe(true);
   const conflict = await main.evaluate(async () => {
@@ -119,12 +126,24 @@ try {
   player.on("pageerror", error => errors.push(error.message));
   await playing();
   await expect.poll(async () => (await media())[0].time).toBeGreaterThan(0.4);
+  await main.evaluate(() => window.touchFish.bilibili.setAlwaysOnTop(true));
+  await expect.poll(async () => (await windows()).find(window => window.url.includes("window=player"))?.alwaysOnTop).toBe(true);
+  await expect(player.getByRole("button", { name: "取消置顶", exact: true, includeHidden: true })).toHaveAttribute("aria-pressed", "true");
   const wageBefore = seconds(await main.locator(".mono").innerText());
   const sourceBefore = (await media()).map(track => track.source);
   await desktop.evaluate(() => globalThis.bossTransportProbe.hold());
   await desktop.evaluate((_electron, shortcut) => globalThis.bossShortcutProbe.invoke(shortcut), configured.shortcut);
   await expect.poll(async () => { const state = await boss(); return state.hidden && state.busy; }).toBe(true);
   await expect.poll(() => desktop.evaluate(() => globalThis.bossTransportProbe.pending)).toBeGreaterThan(0);
+  for (const page of [main, player]) {
+    for (const enabled of [false, true]) {
+      expect(await page.evaluate(async enabled => {
+        try { await window.touchFish.bilibili.setAlwaysOnTop(enabled); return false; } catch { return true; }
+      }, enabled)).toBe(true);
+    }
+  }
+  await allSheltered();
+  expect((await windows()).find(window => window.url.includes("window=player"))?.alwaysOnTop).toBe(true);
   // A tray click can reopen the panel before the media pause acknowledgment.
   // A second real registered callback must hide it synchronously again.
   await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith("/index.html")).show());
@@ -149,6 +168,9 @@ try {
   expect((await boss()).hidden).toBe(false);
   await expect.poll(async () => (await windows()).some(window => window.url.includes("window=player") && window.visible && !window.minimized)).toBe(true);
   await paused();
+  expect((await windows()).find(window => window.url.includes("window=player"))?.alwaysOnTop).toBe(true);
+  expect((await main.evaluate(() => window.touchFish.bilibili.getPlayerState())).alwaysOnTop).toBe(true);
+  await expect(player.getByRole("button", { name: "取消置顶", exact: true, includeHidden: true })).toHaveAttribute("aria-pressed", "true");
   const state = await main.evaluate(() => window.touchFish.bilibili.getTransportState());
   expect(state.playIntent).toBe(false);
   await main.evaluate(state => window.touchFish.bilibili.setPlaying(true, state.revision), state);
@@ -163,6 +185,7 @@ try {
   await allSheltered();
   await paused();
   expect((await boss()).hidden).toBe(true);
+  expect((await windows()).find(window => window.url.includes("window=player"))?.alwaysOnTop).toBe(true);
 
   console.log("Checking shortcut settings remain main-window-only and quit unregisters the owned shortcut...");
   for (const page of [player, floating].filter(Boolean)) {
@@ -190,7 +213,7 @@ try {
   desktop = undefined;
   const log = JSON.parse(await readFile(shortcutLog, "utf8"));
   expect(log.some(entry => entry.operation === "unregister" && entry.shortcut === configured.shortcut)).toBe(true);
-  console.log("PASS: global callback, conflict-safe shortcut, real media pause, all app windows sheltered, wage clock continues, restore stays paused, repeated hide, late source cancellation, narrow permissions and shortcut cleanup.");
+  console.log("PASS: global callback, conflict-safe shortcut, real media pause, pinned player/all app windows sheltered, hidden pin requests rejected, wage clock continues, restore stays paused and pinned, repeated hide, late source cancellation, narrow permissions and shortcut cleanup.");
 } catch (error) {
   console.error(error);
   throw error;

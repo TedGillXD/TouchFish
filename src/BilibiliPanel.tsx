@@ -8,7 +8,7 @@ const initialAuth: BiliAuthState = {
   status: "loading", loggedIn: false, user: null, qrDataUrl: null,
   expiresAt: null, message: "正在读取登录状态…",
 };
-const initialPlayer: BiliPlayerState = { open: false, mode: "video", title: "", bvid: null };
+const initialPlayer: BiliPlayerState = { open: false, mode: "video", title: "", bvid: null, alwaysOnTop: false };
 
 function friendlyError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "") : "";

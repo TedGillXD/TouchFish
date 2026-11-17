@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines, ExternalLink, LoaderCircle, MessageSquare, Minus, Pause, Play, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
+import { AudioLines, ExternalLink, LoaderCircle, MessageSquare, Minus, Pause, Pin, PinOff, Play, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
 import type { BiliDanmaku, BiliMode, BiliPlayback, BiliPlayRequest } from "./bilibili-types";
 import "./bilibili.css";
 
@@ -97,6 +97,9 @@ export default function BiliPlayer() {
   const [playing, setPlaying] = useState(false);
   const [buffering, setBufferingValue] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState("");
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
@@ -246,6 +249,29 @@ export default function BiliPlayer() {
       for (const element of [video.current, audio.current]) element?.pause();
     };
   }, [api]);
+
+  useEffect(() => {
+    if (!api) return;
+    let active = true;
+    let revision = 0;
+    const off = api.onPlayerState(state => {
+      revision++;
+      if (active) setAlwaysOnTop(state.alwaysOnTop);
+    });
+    void api.getPlayerState().then(state => {
+      if (active && revision === 0) setAlwaysOnTop(state.alwaysOnTop);
+    }).catch(() => {});
+    return () => { active = false; off(); };
+  }, [api]);
+
+  const togglePin = async () => {
+    if (!api || pinBusy) return;
+    setPinBusy(true);
+    setPinError("");
+    try { await api.setAlwaysOnTop(!alwaysOnTop); }
+    catch (cause) { setPinError(errorMessage(cause, "置顶设置失败，请重试。")); }
+    finally { setPinBusy(false); }
+  };
 
   useEffect(() => {
     generation.current++;
@@ -509,8 +535,9 @@ export default function BiliPlayer() {
       {(buffering || busy) && !error && <div className="bili-buffering" role="status"><LoaderCircle size={25} className="bili-spinning" /><span>{busy ? "正在切换…" : "正在缓冲…"}</span></div>}
       {error && <div className="bili-player-error" role="alert"><strong>暂时无法播放</strong><p>{error}</p><div><button onClick={reload} disabled={busy || !playback}><RefreshCw size={14} />重试播放</button><button onClick={() => void api?.openVideoPage().catch(() => {})} disabled={!playback}><ExternalLink size={14} />原站查看</button></div></div>}
       <div className="bili-chrome bili-player-top">
-        <div className="bili-player-title" title={playback?.video.title}>{playback?.video.title || "B 站播放器"}<small>{playback ? `${playback.video.bvid} · ${audioMode ? "只听音频" : "视频小窗"}` : "摸鱼时钟"}</small></div>
+        <div className="bili-player-title" title={playback?.video.title}>{playback?.video.title || "B 站播放器"}<small>{playback ? `${playback.video.bvid} · ${audioMode ? "只听音频" : "视频小窗"}` : "摸鱼时钟"}</small>{pinError && <small role="status">{pinError}</small>}</div>
         <div className="bili-window-actions">
+          <button className={alwaysOnTop ? "selected" : ""} title={alwaysOnTop ? "取消置顶" : "置顶播放器"} aria-label={alwaysOnTop ? "取消置顶" : "置顶播放器"} aria-pressed={alwaysOnTop} disabled={!api || pinBusy} onClick={() => void togglePin()}>{alwaysOnTop ? <PinOff size={16} /> : <Pin size={16} />}</button>
           <button title={audioMode ? "切换到视频" : "只听音频"} aria-label={audioMode ? "切换到视频" : "只听音频"} onClick={() => void modeSwitch()} disabled={busy || !playback}><AudioLines size={16} /></button>
           <button title="在B站查看" aria-label="在B站查看" onClick={() => void api?.openVideoPage().catch(() => {})} disabled={!playback}><ExternalLink size={15} /></button>
           <button title="最小化" aria-label="最小化播放器" onClick={() => api?.minimizePlayer()}><Minus size={17} /></button>

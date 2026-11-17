@@ -26,6 +26,12 @@ try {
   await main.getByRole("button", { name: "设置", exact: true }).click();
   const state = await main.evaluate(() => window.touchFish.youtube.getState());
   expect(state.connected).toBe(false); expect(state.open).toBe(false);
+  const playerState = await main.evaluate(() => window.touchFish.bilibili.getPlayerState());
+  expect(playerState.open).toBe(false);
+  expect(playerState.alwaysOnTop).toBe(false);
+  expect(await main.evaluate(async () => {
+    try { await window.touchFish.bilibili.setAlwaysOnTop("true"); return false; } catch { return true; }
+  })).toBe(true);
   let shortcut = await main.evaluate(() => window.touchFish.bossKey.getState());
   // The user's installed app can own the default key while this isolated
   // packaged test is running. Reserve an uncommon key only in our test data.
@@ -37,6 +43,9 @@ try {
   expect(shortcut.registered).toBe(true);
   await main.evaluate(() => window.touchFish.bossKey.trigger());
   await expect.poll(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible() || window.isMinimized()))).toBe(true);
+  expect(await main.evaluate(async () => {
+    try { await window.touchFish.bilibili.setAlwaysOnTop(true); return false; } catch { return true; }
+  })).toBe(true);
   await main.evaluate(() => window.touchFish.bossKey.restore());
   await expect.poll(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some(window => window.webContents.getURL().endsWith("/index.html") && window.isVisible() && !window.isMinimized()))).toBe(true);
   expect((await main.evaluate(() => window.touchFish.bilibili.getHistory())).entries).toEqual([]);
@@ -46,7 +55,7 @@ try {
   await expect(main.getByRole("region", { name: "B站历史记录", exact: true }).getByText("还没有记录", { exact: true })).toBeVisible();
   await main.getByRole("tab", { name: "YouTube", exact: true }).click();
   await expect(main.getByRole("region", { name: "YouTube浏览器连接", exact: true }).getByText("未连接", { exact: true })).toBeVisible();
-  console.log("PASS: packaged startup, companion resources, disconnected YouTube service, real shortcut registration, all-window conceal/restore, Bili history IPC/persistence/empty state, and YouTube route.");
+  console.log("PASS: packaged startup, companion resources, disconnected YouTube service, player pin state/validation/privacy IPC, real shortcut registration, all-window conceal/restore, Bili history IPC/persistence/empty state, and YouTube route.");
 } finally {
   await desktop?.evaluate(({ app }) => app.exit(0)).catch(() => {});
   await desktop?.close().catch(() => {});
