@@ -19,6 +19,7 @@ import {
   type Settings,
 } from "./core";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
+import { getOvertimeTotals } from "./overtime";
 
 export const shortDate = (key: string) =>
   `${Number(key.slice(5, 7))}月${Number(key.slice(8))}日`;
@@ -179,6 +180,7 @@ export function PayrollPanel({
   onBack,
   onSettings,
   onCalendar,
+  onOvertime,
 }: {
   data: AppData;
   now: number;
@@ -187,6 +189,7 @@ export function PayrollPanel({
   onBack: () => void;
   onSettings: () => void;
   onCalendar: () => void;
+  onOvertime: () => void;
 }) {
   const holidayState = useHolidayState();
   const today = dateKey(now);
@@ -203,6 +206,7 @@ export function PayrollPanel({
     .sort()
     .reverse();
   const cash = (amount: number) => (hidden ? "••••" : money(amount));
+  const overtime = getOvertimeTotals(data.overtime, period.start, period.end, now);
   const shift = (delta: number) =>
     setCursor(shiftPayrollPeriod(period, delta, data.settings).start);
   return (
@@ -266,6 +270,12 @@ export function PayrollPanel({
           <span>{keys.length} 天工作记录</span>
         </div>
       </section>
+      {overtime.seconds > 0 && (
+        <button className="history-overtime" onClick={onOvertime}>
+          <span>周期加班 · {(overtime.seconds / 3600).toFixed(2)} 小时</span>
+          <strong>¥{cash(overtime.earnings)}</strong> <ChevronRight size={13} />
+        </button>
+      )}
       <section className="payday-card">
         <h2>
           <Wallet size={15} />

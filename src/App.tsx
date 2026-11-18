@@ -61,6 +61,18 @@ import BilibiliPanel from "./BilibiliPanel";
 import YouTubePanel from "./YouTubePanel";
 import BossKeySettings from "./BossKeySettings";
 import DataManagementPanel from "./DataManagementPanel";
+import OvertimePanel from "./OvertimePanel";
+import {
+  closeOvertime,
+  deleteOvertime,
+  emptyOvertime,
+  getActiveOvertime,
+  getOvertimeTotals,
+  saveOvertime,
+  setOvertimeBase,
+  startOvertime,
+  type OvertimeData,
+} from "./overtime";
 import {
   PayrollPanel,
   PayrollSettings,
@@ -68,7 +80,7 @@ import {
   shortDate,
 } from "./Payroll";
 
-type View = "home" | "settings" | "calendar" | "history" | "payroll" | "bilibili" | "youtube";
+type View = "home" | "settings" | "calendar" | "history" | "payroll" | "overtime" | "bilibili" | "youtube";
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 const money = (n: number) =>
   n.toLocaleString("zh-CN", {
@@ -147,9 +159,10 @@ function App() {
   }, []);
   useEffect(() => {
     if (!data) return;
+    const overtime = data.overtime && getActiveOvertime(data.overtime);
     const stale = Object.values(data.records).some(
       (r) => !r.completed && now >= r.plan.end,
-    );
+    ) || (overtime?.endsAt != null && now >= overtime.endsAt);
     if (stale)
       setData((current) => (current ? reconcileData(current, now) : current));
   }, [now, data]);
@@ -176,6 +189,11 @@ function App() {
 
   const summary = data ? getDaySummary(data, now) : null;
   const todayKey = dateKey(now);
+  const todayOvertime = getOvertimeTotals(data?.overtime, todayKey, todayKey, now);
+  const overtime = data?.overtime ?? emptyOvertime();
+  const activeOvertime = getActiveOvertime(overtime);
+  const overtimeRunning = !!activeOvertime && activeOvertime.endsAt !== null && now < activeOvertime.endsAt;
+  const todayIncome = (summary?.earnings ?? 0) + todayOvertime.earnings;
   const currentPeriod = useMemo(
     () => (data ? getPayrollPeriod(todayKey, data.settings) : null),
     [data?.settings, todayKey, holidayState.years],
@@ -199,9 +217,9 @@ function App() {
   useEffect(() => {
     if (summary)
       window.touchFish?.updateStatus?.(
-        `摸鱼时钟 · 今日 ${hidden ? "金额已隐藏" : `¥${money(summary.earnings)}`} · ${summary.status === "working" ? "计时中" : summary.status === "completed" ? "已下班" : "点击打开"}`,
+        `摸鱼时钟 · 今日 ${hidden ? "金额已隐藏" : `¥${money(todayIncome)}`} · ${overtimeRunning ? "加班中" : summary.status === "working" ? "计时中" : summary.status === "completed" ? "已下班" : "点击打开"}`,
       );
-  }, [summary?.earnings, summary?.status, hidden]);
+  }, [todayIncome, summary?.status, overtimeRunning, hidden]);
 
   if (!data || !summary || !currentPeriod)
     return (
@@ -240,7 +258,7 @@ function App() {
     now >= summary.plan.dinnerStart &&
     now < summary.plan.dinnerEnd;
   const mealBreak = lunch || dinner;
-  const status = mealBreak
+  const status = overtimeRunning ? "正在加班" : mealBreak
     ? dinner
       ? "晚饭中"
       : "午休中"
@@ -295,6 +313,7 @@ function App() {
     hour12: false,
   });
   const cash = (n: number) => (hidden ? "••••" : money(n));
+  const periodOvertime = getOvertimeTotals(overtime, currentPeriod.start, currentPeriod.end, now);
   const mutate = (fn: (d: AppData, time: number) => AppData) => {
     setData((current) => (current ? fn(current, Date.now()) : current));
     setNow(Date.now());
@@ -306,6 +325,25 @@ function App() {
   const openCalendar = (focus?: string) => {
     setCalendarFocus(focus);
     setView("calendar");
+  };
+  const updateOvertime = (change: (value: OvertimeData, time: number) => OvertimeData) => {
+    try {
+      const time = Date.now();
+      const next = change(overtime, time);
+      setData(current => current ? { ...reconcileData(current, time), overtime: next } : current);
+      setNow(time);
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "加班记录未能保存，请重试。";
+    }
+  };
+  const overtimeDateHint = (key: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return "请选择加班日期。";
+    const holiday = getPublicHoliday(key);
+    if (holiday?.kind === "rest") return `${holiday.name}放假安排内。请确认当天是法定节假日还是调休休息日。`;
+    if (holiday?.kind === "work") return "公共日历显示当天为调休补班日，请按实际排班选择加班类型。";
+    const year = Number(key.slice(0, 4));
+    if (!getHolidayYears().includes(year)) return "该年度节假日数据待更新，请按实际日期和排班确认类型。";
+    return isWorkday(key, data.settings) ? "当前排班为工作日，请确认实际加班类型。" : "当前排班为休息日，请确认实际加班类型。";
   };
 
   return (
@@ -407,15 +445,15 @@ function App() {
                 <span>
                   <Wallet size={17} /> 今日已赚
                 </span>
-                <span className={`status ${working ? "live" : ""}`}>
+                <span className={`status ${working || overtimeRunning ? "live" : ""}`}>
                   <b />
                   {status}
                 </span>
               </div>
               <div className="earnings">
                 <span className="currency">¥</span>
-                <span>{cash(summary.earnings)}</span>
-                <span className="amount-unit">税前</span>
+                <span>{cash(todayIncome)}</span>
+                <span className="amount-unit">{todayOvertime.earnings > 0 ? "税前 · 含加班" : "税前"}</span>
               </div>
               <div className="progress-caption">
                 <span>
@@ -459,12 +497,14 @@ function App() {
                 <span>
                   <Clock3 size={16} /> 今日工作
                 </span>
-                <button
-                  className="text-button"
-                  onClick={() => setView("settings")}
-                >
-                  调整时间 <ChevronRight size={13} />
-                </button>
+                <div className="work-heading-actions">
+                  <button className="text-button overtime-link" onClick={() => setView("overtime")}>
+                    {overtimeRunning ? "加班计时中" : "加班"} <ChevronRight size={13} />
+                  </button>
+                  <button className="text-button" onClick={() => setView("settings")}>
+                    调整时间 <ChevronRight size={13} />
+                  </button>
+                </div>
               </div>
               <div className="schedule-line">
                 <span className="schedule-icon">
@@ -511,6 +551,8 @@ function App() {
                   <>
                     <button
                       className="primary"
+                      disabled={!working && overtimeRunning}
+                      title={!working && overtimeRunning ? "请先结束加班计时" : undefined}
                       onClick={() => mutate(working ? pauseWork : startWork)}
                     >
                       {working ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
@@ -540,7 +582,7 @@ function App() {
                     查看工作日历
                   </button>
                 ) : (
-                  <button className="primary" onClick={() => mutate(startWork)}>
+                  <button className="primary" disabled={overtimeRunning} title={overtimeRunning ? "请先结束加班计时" : undefined} onClick={() => mutate(startWork)}>
                     <Play size={17} fill="currentColor" />
                     开始工作<span>开启今天的积累</span>
                   </button>
@@ -558,7 +600,7 @@ function App() {
                       ? "今日目标已结算 · 跨天后可重新开始"
                       : "今天未开始计薪 · 明天可重新开始"
                     : summary.status === "rest"
-                      ? "需要加班？在日历中将今天设为工作日"
+                      ? "休息日加班可在「加班」中单独记录"
                       : working
                         ? `${nextEnd} 自动结算日目标 · 收起后继续记录`
                         : "点击即计薪 · 下班时补齐今日目标"}
@@ -674,6 +716,28 @@ function App() {
         </div>}
         {view === "bilibili" && <BilibiliPanel onBack={() => setView("home")} />}
         {view === "youtube" && <YouTubePanel onBack={() => setView("home")} />}
+        {view === "overtime" && (
+          <>
+            <PanelTitle title="加班" subtitle="记录时长与税前加班费" onBack={() => setView("home")} />
+            <OvertimePanel
+              overtime={overtime}
+              defaultBase={data.settings.monthlySalary}
+              today={today}
+              now={now}
+              hidden={hidden}
+              startDisabledReason={working ? "请先暂停正常计时或结束工作。" : null}
+              getDateHint={overtimeDateHint}
+              onBaseChange={base => updateOvertime(value => setOvertimeBase(value, base))}
+              onStart={input => updateOvertime((value, time) => {
+                if (getDaySummary(data, time).status === "working") throw new Error("请先暂停正常计时或结束工作。");
+                return startOvertime(value, input, time);
+              })}
+              onStop={() => updateOvertime(closeOvertime)}
+              onSave={(input, id) => updateOvertime((value, time) => saveOvertime(value, input, time, id))}
+              onDelete={id => updateOvertime(value => deleteOvertime(value, id))}
+            />
+          </>
+        )}
         {view === "settings" && (
           <SettingsPanel
             settings={data.settings}
@@ -710,6 +774,7 @@ function App() {
             onBack={() => setView("home")}
             onSettings={() => setView("settings")}
             onCalendar={() => openCalendar()}
+            onOvertime={() => setView("overtime")}
           />
         )}
         {view === "history" && (
@@ -733,6 +798,12 @@ function App() {
                 )}
               </strong>
             </div>
+            {periodOvertime.seconds > 0 && (
+              <button className="history-overtime" onClick={() => setView("overtime")}>
+                <span>周期加班 · {duration(periodOvertime.seconds)}</span>
+                <strong>¥{cash(periodOvertime.earnings)}</strong> <ChevronRight size={13} />
+              </button>
+            )}
             <div className="history-list">
               {Object.keys(data.records)
                 .filter(

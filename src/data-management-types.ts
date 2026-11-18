@@ -15,6 +15,7 @@ export interface BackupPreview {
   exportedAt: string | null;
   appVersion: string | null;
   recordCount: number;
+  overtimeCount?: number;
   historyCount: number | null;
   includesPreferences: boolean;
 }

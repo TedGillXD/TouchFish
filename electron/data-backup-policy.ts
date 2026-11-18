@@ -1,4 +1,5 @@
 import { normalizeData, validateSettings, dateKey, type AppData } from "../src/core";
+import { closeOvertime, getActiveOvertime } from "../src/overtime";
 import type { BiliHistoryEntry } from "../src/bilibili-history-types";
 import { normalizeBvid } from "./bilibili-policy";
 import { normalizeBossShortcut } from "./boss-key";
@@ -93,7 +94,11 @@ function appData(value: unknown, legacy: boolean): AppData {
       if (range.to === null && (++opens > 1 || raw.completed)) throw invalidRecord();
     }
   }
-  const normalized = normalizeData(value);
+  let normalized: AppData;
+  try { normalized = normalizeData(value); }
+  catch {
+    throw value.overtime === undefined ? invalidRecord() : new Error("备份中的加班记录或计薪基数无效，未修改本机数据。");
+  }
   if (validateSettings(normalized.settings).length || Object.keys(normalized.records).length !== rows.length) throw invalidRecord();
   for (const [key, raw] of rows) {
     const row = raw as Record<string, unknown>, p = row.plan as Record<string, number>;
@@ -151,7 +156,11 @@ function preferences(value: unknown): BackupPreferences {
 }
 
 function capture(data: AppData, cutoff: number | null): AppData {
-  return { ...data, records: Object.fromEntries(Object.entries(data.records).map(([key, row]) => [key, { ...row,
+  const overtime = data.overtime;
+  // An older raw state file has no reliable capture timestamp.
+  const overtimeCutoff = cutoff ?? (overtime && getActiveOvertime(overtime)?.startedAt) ?? 0;
+  return { ...data, ...(overtime ? { overtime: closeOvertime(overtime, overtimeCutoff) } : {}),
+    records: Object.fromEntries(Object.entries(data.records).map(([key, row]) => [key, { ...row,
     plan: { ...row.plan }, intervals: row.intervals.map(range => ({ from: range.from,
       to: range.to ?? (cutoff === null ? range.from : Math.max(range.from, Math.min(row.plan.end, cutoff))) })),
   }])) };
@@ -198,5 +207,6 @@ export function prepareBackupForImport(backup: DataBackup, _now = Date.now()): D
 export function summarizeBackup(backup: DataBackup) {
   return { exportedAt: backup.exportedAt, appVersion: backup.appVersion, legacy: backup.source === "legacy",
     workdayCount: Object.keys(backup.data.records).length, historyCount: backup.history?.length ?? 0,
+    ...(backup.data.overtime ? { overtimeCount: backup.data.overtime.entries.length } : {}),
     hasHistory: backup.history !== undefined, hasPreferences: !!backup.preferences && Object.keys(backup.preferences).length > 0 };
 }

@@ -360,6 +360,31 @@ svg {
 .section-label > span svg {
   color: #84928b;
 }
+.work-heading-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.work-heading-actions .overtime-link {
+  color: #237858;
+  font-weight: 650;
+}
+.history-overtime {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2ede6;
+  border-radius: 10px;
+  background: #f5f9f6;
+  color: #3a6c56;
+  text-align: left;
+  font-size: 11px;
+}
+.history-overtime:hover { background: #edf6ef; }
+.history-overtime strong { margin-left: auto; }
 .text-button {
   display: flex;
   align-items: center;

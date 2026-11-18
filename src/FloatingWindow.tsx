@@ -13,6 +13,7 @@ import type { FloatingState } from "./floating-types";
 import type { MediaTransportState } from "./media-types";
 import { dateKey } from "./core";
 import { useHolidayState, useHolidayYears, yearsForDates } from "./holiday-client";
+import { getActiveOvertime, getOvertimeTotals } from "./overtime";
 
 const duration = (seconds: number) => {
   const value = Math.floor(Math.max(0, seconds));
@@ -156,6 +157,11 @@ export default function FloatingWindow() {
   }, [api, state]);
 
   const summary = data ? getDaySummary(data, now) : null;
+  const today = dateKey(now);
+  const overtime = getOvertimeTotals(data?.overtime, today, today, now);
+  const liveOvertime = data?.overtime && getActiveOvertime(data.overtime);
+  const overtimeRunning = !!liveOvertime && liveOvertime.date === today && now < liveOvertime.endsAt;
+  const income = (summary?.earnings ?? 0) + overtime.earnings;
   const ready = !!summary && !!state && !loadError;
   const expanded = state?.expanded === true;
   const active = ready && summary.status === "working";
@@ -167,6 +173,7 @@ export default function FloatingWindow() {
     now < summary.plan.dinnerEnd;
   const resting = inLunch || inDinner;
   const status = !ready ? (loadError ? "读取失败" : "正在同步")
+    : overtimeRunning ? "加班中"
     : inDinner ? "晚饭中"
     : inLunch ? "午休中"
     : summary.status === "working" ? "计时中"
@@ -229,12 +236,12 @@ export default function FloatingWindow() {
               <span className="floating-caption">今日已赚</span>
               <strong
                 className="floating-earnings"
-                style={ready && !state.privacy && money(summary.earnings).length > 10 ? { fontSize: 18 } : undefined}
+                style={ready && !state.privacy && money(income).length > 10 ? { fontSize: 18 } : undefined}
               >
-                {!ready ? "—" : state.privacy ? "••••" : `¥${money(summary.earnings)}`}
+                {!ready ? "—" : state.privacy ? "••••" : `¥${money(income)}`}
               </strong>
             </div>
-            <span className={`floating-status ${active && !resting ? "active" : ""}`}>
+            <span className={`floating-status ${(active && !resting) || overtimeRunning ? "active" : ""}`}>
               <i aria-hidden="true" />{status}
             </span>
           </div>
@@ -255,7 +262,7 @@ export default function FloatingWindow() {
                 <RotateCcw size={11} />重试读取
               </button>
             ) : (
-              <span className="floating-duration">{ready ? duration(summary.seconds) : "—"}</span>
+              <span className="floating-duration">{ready ? duration(summary.seconds + overtime.seconds) : "—"}</span>
             )}
             <button className="floating-open" onClick={() => api?.openPanel()}>
               完整面板 <ArrowUpRight size={12} />

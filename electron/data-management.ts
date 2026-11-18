@@ -73,6 +73,7 @@ export async function createDataManagement(options: Options) {
       id: randomBytes(24).toString("hex"), source, name: name.replace(/[\u0000-\u001f]/g, " ").slice(0, 180),
       exportedAt: summary.exportedAt, appVersion: summary.appVersion,
       recordCount: summary.workdayCount, historyCount: summary.hasHistory ? summary.historyCount : null,
+      ...(summary.overtimeCount !== undefined ? { overtimeCount: summary.overtimeCount } : {}),
       includesPreferences: summary.hasPreferences,
     };
     pending = { preview, backup: structuredClone(backup), expiresAt: now() + 10 * 60_000 };

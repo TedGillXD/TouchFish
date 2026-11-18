@@ -102,6 +102,10 @@ jobs:
         if: matrix.platform == 'win32'
         timeout-minutes: 5
         run: node scripts/earnings-smoke.mjs
+      - name: Verify overtime recording and payroll totals
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: node scripts/overtime-smoke.mjs
       - name: Verify online China holiday service and desktop calendar
         if: matrix.platform == 'win32'
         timeout-minutes: 5
@@ -211,12 +215,12 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          ## 1.6.1 更新内容
+          ## 1.6.2 更新内容
 
-          - B 站视频小窗新增置顶钉子按钮，鼠标移入后可在顶部操作栏开启或取消置顶，开启时按钮高亮。
-          - 小窗默认不置顶；同一窗口内切换视频、分 P、画质或音频模式时保留当前选择，关闭播放器后重新打开恢复为不置顶。
-          - 置顶窗口仍支持移动、缩放和最小化，老板键仍会暂停播放并收起窗口，恢复窗口后保持暂停。
-          - 保留 1.6.0 的数据导入导出、恢复副本和私有 Git 仓库备份，以及工资计时、节假日、发薪周期和系统代理更新；升级继续使用现有本地设置与工作记录。
+          - 首页「今日工作」旁新增「加班」。可按秒计时、补录、编辑和删除记录，支持登记休息日的部分或全部补休。
+          - 按中国大陆标准工时制的法定最低标准估算。小时工资为月工资基数 ÷ 21.75 ÷ 8。工作日延时按 150%，休息日未补休时长按 200%，法定节假日当天按 300%。每笔记录需确认加班类型。
+          - 支持设置独立的加班工资基数。默认用税前月薪估算，已保存的记录保留各自基数。
+          - 加班费计入今日收入和对应薪资周期。加班记录随本地和 Git 备份保存，恢复缺少加班字段的旧备份时保留本机加班数据。
 
           YouTube 浏览器扩展入口仍属实验功能，需在 Chrome / Edge 手动加载应用附带的配套扩展并连接浏览器。真实账号登录和 YouTube 网络播放尚未完成实机验收。
 

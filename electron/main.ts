@@ -16,6 +16,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent, Rectangle } from "electron";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { emptyData, normalizeData, type AppData } from "../src/core";
+import { closeOvertime, emptyOvertime } from "../src/overtime";
 import { createDataManagement } from "./data-management";
 import { createDataBackup, type DataBackup, type BackupPreferences } from "./data-backup-policy";
 import { createUpdaterController } from "./updater";
@@ -397,8 +398,9 @@ async function captureDataBackup(): Promise<DataBackup> {
   await floating?.flush();
   const history = biliHistory?.getState();
   if (history?.error) throw new Error("视频历史尚未完整读取或保存，请先处理历史记录错误后再备份。");
+  const data = liveData ?? await loadState() ?? emptyData();
   return createDataBackup({
-    appVersion: app.getVersion(), data: liveData ?? await loadState() ?? emptyData(),
+    appVersion: app.getVersion(), data: { ...data, overtime: data.overtime ?? emptyOvertime() },
     history: history?.entries ?? [], preferences: portablePreferences(),
   });
 }
@@ -429,7 +431,9 @@ async function applyDataBackup(backup: DataBackup): Promise<void> {
     historyDeletionVersions.clear();
     await applyPortablePreferences(backup.preferences);
     if (backup.history !== undefined) await biliHistory?.replace(backup.history);
-    await saveState(backup.data);
+    await saveState(backup.data.overtime === undefined && before.data.overtime
+      ? { ...backup.data, overtime: before.data.overtime }
+      : backup.data);
     awaitingRestoredDocument = true;
     // A new document receives the imported snapshot. Its private session ID
     // also prevents a late autosave from the old React draft overwriting it.
@@ -572,6 +576,7 @@ function showWindow(settings = false): void {
 async function requestQuit(): Promise<void> {
   if (quitPending) return;
   quitPending = true;
+  const quitAt = Date.now();
   // Network sync can be canceled; local restore/export writes still finish in flush.
   dataManagement?.dispose();
   await writeQueue;
@@ -582,6 +587,11 @@ async function requestQuit(): Promise<void> {
   await youtube?.flush().catch(() => {});
   await bossKey?.flush().catch(() => {});
   await dataManagement?.flush().catch(() => {});
+  const data = liveData ?? await loadState().catch(() => null);
+  if (data?.overtime) {
+    const overtime = closeOvertime(data.overtime, quitAt);
+    if (overtime !== data.overtime) await saveState({ ...data, overtime }).catch(() => {});
+  }
   try {
     await floating?.flush();
   } catch {
@@ -793,6 +803,7 @@ function registerIpc(): void {
   });
   ipcMain.handle("data:save", async (event, value: unknown, session: unknown) => {
     assertTrusted(event);
+    if (quitPending) throw new Error("应用正在退出。");
     if (importingData || typeof session !== "string" || session !== mainDataSession)
       throw new Error("数据会话已更新，旧面板的记录未覆盖恢复的数据。");
     await saveState(value);

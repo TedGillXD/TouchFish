@@ -164,7 +164,7 @@ export default function DataManagementPanel({ hasUnsavedSettings }: { hasUnsaved
 
   return <section className="settings-group data-management" aria-label="数据管理" aria-busy={busy}>
     <h2><Database size={15} />数据管理</h2>
-    <p className="data-description">备份工资与排班设置、工作记录、视频历史和偏好设置，方便换机或恢复。</p>
+    <p className="data-description">备份工资与排班设置、工作和加班记录、视频历史和偏好设置，方便换机或恢复。</p>
     <div className="data-local-actions">
       <button disabled={!canBackup} onClick={() => void exportBackup()}>{action === "export" ? <LoaderCircle size={13} className="data-loader" /> : <Download size={13} />}导出备份</button>
       <button disabled={!canBackup} onClick={() => void choosePreview("file")}>{action === "file" ? <LoaderCircle size={13} className="data-loader" /> : <Upload size={13} />}导入备份</button>
@@ -200,9 +200,17 @@ export default function DataManagementPanel({ hasUnsavedSettings }: { hasUnsaved
 
     {preview && <div className="data-preview" ref={previewElement} tabIndex={-1} role="group" aria-label="导入备份预览">
       <h3><FileCheck2 size={14} />{preview.source === "git" ? "云端备份预览" : preview.source === "recovery" ? "恢复副本预览" : "备份文件预览"}</h3>
-      <dl><dt>来源</dt><dd>{preview.name}</dd><dt>备份时间</dt><dd>{dateLabel(preview.exportedAt)}</dd><dt>应用版本</dt><dd>{preview.appVersion ? `v${preview.appVersion}` : "旧版数据文件"}</dd><dt>工作记录</dt><dd>{preview.recordCount} 天</dd><dt>视频历史</dt><dd>{preview.historyCount === null ? "不包含，保留本机历史" : `${preview.historyCount} 条`}</dd><dt>偏好设置</dt><dd>{preview.includesPreferences ? "可选择一并恢复" : "不包含，保留本机偏好"}</dd></dl>
+      <dl>
+        <dt>来源</dt><dd>{preview.name}</dd>
+        <dt>备份时间</dt><dd>{dateLabel(preview.exportedAt)}</dd>
+        <dt>应用版本</dt><dd>{preview.appVersion ? `v${preview.appVersion}` : "旧版数据文件"}</dd>
+        <dt>工作记录</dt><dd>{preview.recordCount} 天</dd>
+        {preview.overtimeCount !== undefined && <><dt>加班记录</dt><dd>{preview.overtimeCount} 条</dd></>}
+        <dt>视频历史</dt><dd>{preview.historyCount === null ? "不包含，保留本机历史" : `${preview.historyCount} 条`}</dd>
+        <dt>偏好设置</dt><dd>{preview.includesPreferences ? "可选择一并恢复" : "不包含，保留本机偏好"}</dd>
+      </dl>
       {preview.includesPreferences && <label className="data-preferences-choice"><input type="checkbox" checked={restorePreferences} disabled={busy} onChange={event => setRestorePreferences(event.target.checked)} />同时恢复悬浮窗和老板键偏好</label>}
-      <p className="data-preview-note">确认后将覆盖备份中包含的本机数据，并保留当前数据的恢复副本。恢复后的计薪记录保持暂停，需要你手动继续工作。</p>
+      <p className="data-preview-note">确认后将覆盖备份中包含的本机数据，并保留恢复副本。恢复后请手动开启需要继续的计时。{preview.overtimeCount === undefined && "本机加班记录和基数将保留。"}</p>
       <div className="data-preview-actions"><button className="text-button" disabled={busy} onClick={() => void cancelPreview()}>取消导入</button><button className="primary" disabled={busy || hasUnsavedSettings} onClick={() => void restore()}>{action === "restore" ? <LoaderCircle size={13} className="data-loader" /> : <Check size={13} />}确认覆盖并恢复</button></div>
     </div>}
 

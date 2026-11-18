@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { emptyData, startWork, pauseWork, finishWork, getRecordSummary, type AppData } from "../src/core";
+import { emptyOvertime, getActiveOvertime, setOvertimeBase, startOvertime } from "../src/overtime";
 import { createDataBackup, parseDataBackup, prepareBackupForImport, normalizeBackupHistory, summarizeBackup, MAX_BACKUP_BYTES } from "./data-backup-policy";
 import type { BiliHistoryEntry } from "../src/bilibili-history-types";
 
@@ -35,6 +36,37 @@ test("export captures active seconds without changing live work and import never
   assert.equal(imported.data.records[day].intervals.some(interval => interval.to === null), false);
   imported.data.settings.monthlySalary = 1;
   assert.notEqual(live.settings.monthlySalary, 1);
+});
+
+test("overtime backups preserve the selected base and stop imported timers at the snapshot time", () => {
+  const overtime = startOvertime(
+    setOvertimeBase(emptyOvertime(), 17400),
+    { kind: "weekday", monthlyBase: 17400 },
+    at("18:00"),
+  );
+  const live = { ...data(), overtime };
+  const before = clone(live);
+  const snapshot = createDataBackup({ data: live, appVersion: "1.6.1" }, at("18:45"));
+  assert.deepEqual(live, before);
+  assert.ok(getActiveOvertime(overtime));
+  assert.equal(snapshot.data.overtime?.monthlyBase, 17400);
+  assert.deepEqual(snapshot.data.overtime?.entries.map(({ kind, monthlyBase, seconds, startedAt, endsAt }) => ({
+    kind, monthlyBase, seconds, startedAt, endsAt,
+  })), [{ kind: "weekday", monthlyBase: 17400, seconds: 2700, startedAt: null, endsAt: null }]);
+
+  // A valid snapshot timestamp still bounds a stored live timer if a backup
+  // was created before the timer was closed or transferred from another PC.
+  const activeBackup = { ...snapshot, data: live };
+  const parsed = parseDataBackup(JSON.stringify(activeBackup), at("21:00"));
+  assert.deepEqual(prepareBackupForImport(parsed, at("23:00")).data.overtime, snapshot.data.overtime);
+  assert.equal(summarizeBackup(parsed).overtimeCount, 1);
+  rejects({ ...activeBackup, data: { ...live, overtime: { monthlyBase: -1, entries: [] } } });
+
+  const rawState = parseDataBackup(JSON.stringify(live), at("21:00"));
+  assert.equal(rawState.source, "legacy");
+  assert.deepEqual(rawState.data.overtime, { monthlyBase: 17400, entries: [] });
+  assert.equal(summarizeBackup(rawState).overtimeCount, 0);
+  assert.equal(summarizeBackup(parseDataBackup(JSON.stringify(data()))).overtimeCount, undefined);
 });
 
 test("completed wage targets and record snapshots survive salary edits and later imports", () => {

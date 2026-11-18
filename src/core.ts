@@ -1,5 +1,6 @@
 /** Local, deterministic payroll estimates. All timestamps are milliseconds. */
 import { getPublicHoliday, getHolidayYears } from "./holidays";
+import { getActiveOvertime, getOvertimeTotals, parseOvertime, reconcileOvertime, type OvertimeData } from "./overtime";
 export type ScheduleMode = "double" | "single" | "alternate";
 export interface DayHours {
   start: string;
@@ -66,6 +67,7 @@ export interface AppData {
   version: 1;
   settings: Settings;
   records: Record<string, DayRecord>;
+  overtime?: OvertimeData;
 }
 export type WorkStatus = "idle" | "working" | "paused" | "completed" | "rest";
 export interface DaySummary {
@@ -691,6 +693,7 @@ export function normalizeData(value: unknown): AppData {
     settings: normalizeSettings(value.settings),
     records: {},
   };
+  if (value.overtime !== undefined) data.overtime = parseOvertime(value.overtime);
   if (!isObject(value.records)) return data;
   for (const [key, raw] of Object.entries(value.records).slice(-10000)) {
     if (
@@ -923,11 +926,14 @@ export function reconcileData(data: AppData, now = Date.now()): AppData {
       ),
     };
   }
-  return records === data.records ? data : { ...data, records };
+  const overtime = data.overtime && reconcileOvertime(data.overtime, now);
+  if (records === data.records && overtime === data.overtime) return data;
+  return { ...data, records, ...(overtime && { overtime }) };
 }
 
 export function startWork(data: AppData, now = Date.now()): AppData {
   const current = reconcileData(data, now);
+  if (current.overtime && getActiveOvertime(current.overtime)) return current;
   const key = dateKey(now);
   let existing = current.records[key];
   if (existing && legacyWaiting(existing, now) && !existing.intervals.some(interval => interval.to === null))
@@ -1004,7 +1010,8 @@ export function monthEarnings(
   now = Date.now(),
 ): number {
   const prefix = `${year}-${pad(month)}-`;
-  return Object.entries(data.records)
+  const overtime = getOvertimeTotals(data.overtime, `${prefix}01`, `${prefix}31`, now);
+  return overtime.earnings + Object.entries(data.records)
     .filter(([key]) => key.startsWith(prefix))
     .reduce(
       (total, [, record]) =>
@@ -1014,7 +1021,7 @@ export function monthEarnings(
     );
 }
 
-/** Sum recorded earnings and completed-day settlements using each day's saved target. */
+/** Sum ordinary wages and recorded overtime within the inclusive period. */
 export function periodEarnings(
   data: AppData,
   start: string,
@@ -1022,7 +1029,8 @@ export function periodEarnings(
   now = Date.now(),
 ): number {
   if (!validDateKey(start) || !validDateKey(end) || start > end) return 0;
-  return Object.entries(data.records)
+  const overtime = getOvertimeTotals(data.overtime, start, end, now);
+  return overtime.earnings + Object.entries(data.records)
     .filter(([key]) => key >= start && key <= end)
     .reduce(
       (total, [, record]) =>

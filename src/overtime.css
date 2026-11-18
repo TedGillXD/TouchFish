@@ -1,0 +1,123 @@
+.overtime-panel {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.overtime-card.settings-group { margin: 0; }
+.overtime-mode { margin-bottom: 14px; }
+.overtime-form { scroll-margin-top: 8px; }
+.overtime-actions, .overtime-live-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.overtime-actions > button, .overtime-live-foot > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 7px 12px;
+}
+.overtime-panel .primary:disabled {
+  color: #7e8c83;
+  background: #edf2ef;
+  box-shadow: none;
+}
+.overtime-base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #edf1ee;
+}
+.overtime-base > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  color: #5b6d62;
+  font-size: 11px;
+}
+.overtime-base strong { font-weight: 600; }
+.overtime-base small, .overtime-live-foot small { color: #6f8177; font-size: 10px; }
+.overtime-base-form { width: 100%; }
+.overtime-base .text-button, .overtime-record-actions .text-button { padding: 4px 0; }
+.overtime-duration {
+  min-width: 0;
+  margin-inline: 0;
+  padding: 0;
+  border: 0;
+}
+.overtime-duration > legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: #89929a;
+  font-size: 11px;
+}
+.overtime-duration-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.overtime-duration-fields > label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #697b70;
+  font-size: 11px;
+}
+.overtime-note { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: #64766b; }
+.overtime-live {
+  padding: 14px 16px;
+  border: 1px solid #e0ede5;
+  border-radius: 13px;
+  background: #f1f8f4;
+  color: #2f6c53;
+}
+.overtime-live-head, .overtime-live-metrics, .overtime-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.overtime-live-head { font-size: 11px; }
+.overtime-live-head span:first-child { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+.overtime-live-metrics { margin-top: 8px; font-size: 20px; font-variant-numeric: tabular-nums; }
+.overtime-live-foot { justify-content: space-between; }
+.overtime-estimate {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #f1f8f4;
+  color: #3b6e53;
+  font-size: 11px;
+}
+.overtime-feedback { margin: 0; }
+.overtime-success { color: #2f6c53; font-size: 11px; }
+.overtime-history > h2 { margin: 4px 0 8px; font-size: 13px; font-weight: 600; }
+.overtime-record { padding: 10px 0; border-bottom: 1px solid #eff2f0; }
+.overtime-record-main { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.overtime-record-main strong { font-size: 12px; font-weight: 600; }
+.overtime-record-main small { display: block; margin-top: 4px; color: #6c7c72; font-size: 10px; }
+.overtime-record-pay { text-align: right; color: #387954; font-variant-numeric: tabular-nums; }
+.overtime-record-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  color: #7b5d55;
+  font-size: 10px;
+}
+.overtime-record-actions .overtime-danger { color: #a25849; }
+.overtime-more { margin-top: 6px; }
+.overtime-rules { color: #62756a; font-size: 11px; line-height: 1.65; }
+.overtime-rules summary { cursor: pointer; padding: 2px 0; }
+.overtime-rules p { margin: 7px 0 5px; }
+.overtime-rules small { font-size: 10px; }
