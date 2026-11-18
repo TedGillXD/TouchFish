@@ -28,6 +28,7 @@ import { createBilibiliHistory } from "./bilibili-history";
 import { normalizeBvid } from "./bilibili-policy";
 import { createBossKeyController } from "./boss-key";
 import { createYouTubeWindow } from "./youtube-window";
+import { createHongguoWindow } from "./hongguo-window";
 import type { BiliMode, BiliPlayback, BiliPlayRequest, BiliTransportState } from "../src/bilibili-types";
 import type { BossKeyState } from "../src/boss-key-types";
 import type { MediaProvider, MediaTransportState } from "../src/media-types";
@@ -72,6 +73,7 @@ const historyDeletionVersions = new Map<string, number>();
 let player: ReturnType<typeof createBilibiliWindow> | null = null;
 let playbackRequest = 0;
 let youtube: Awaited<ReturnType<typeof createYouTubeWindow>> | null = null;
+let hongguo: ReturnType<typeof createHongguoWindow> | null = null;
 let bossKey: Awaited<ReturnType<typeof createBossKeyController>> | null = null;
 let dataManagement: Awaited<ReturnType<typeof createDataManagement>> | null = null;
 let importingData = false;
@@ -141,7 +143,7 @@ async function concealLeisure(): Promise<void> {
   win?.hide();
   floating?.setConcealed(true);
   bilibili?.cancelLogin();
-  const results = await Promise.allSettled([player?.pauseAndHide(), youtube?.pauseAndHide()]);
+  const results = await Promise.allSettled([player?.pauseAndHide(), youtube?.pauseAndHide(), hongguo?.pauseAndHide()]);
   if (results.some(result => result.status === "rejected"))
     throw new Error("部分媒体未确认暂停，窗口已要求收起。");
 }
@@ -154,11 +156,12 @@ function repeatConcealLeisure(): void {
   floating?.setConcealed(true);
   void player?.pauseAndHide().catch(() => {});
   void youtube?.pauseAndHide().catch(() => {});
+  void Promise.resolve(hongguo?.pauseAndHide()).catch(() => {});
 }
 
 async function restoreLeisure(): Promise<void> {
   const epoch = leisureEpoch;
-  await Promise.all([player?.restorePaused(), youtube?.restorePaused()]);
+  await Promise.all([player?.restorePaused(), youtube?.restorePaused(), hongguo?.restorePaused()]);
   if (epoch !== leisureEpoch) return;
   leisureSuppressed = false;
   floating?.setConcealed(false);
@@ -585,6 +588,8 @@ async function requestQuit(): Promise<void> {
   await biliHistory?.flush().catch(() => {});
   await youtube?.pauseAndHide().catch(() => {});
   await youtube?.flush().catch(() => {});
+  await Promise.resolve(hongguo?.pauseAndHide()).catch(() => {});
+  await Promise.resolve(hongguo?.flush()).catch(() => {});
   await bossKey?.flush().catch(() => {});
   await dataManagement?.flush().catch(() => {});
   const data = liveData ?? await loadState().catch(() => null);
@@ -630,6 +635,18 @@ function registerIpc(): void {
     return bossKey!.trigger();
   });
   ipcMain.handle("boss-key:restore", event => { assertTrusted(event); return bossKey!.restore(); });
+  const hongguoController = () => {
+    if (!hongguo) throw new Error("红果短剧小窗尚未就绪，请稍后重试。");
+    return hongguo;
+  };
+  ipcMain.handle("hongguo:get", event => { assertTrusted(event); return hongguoController().getState(); });
+  ipcMain.handle("hongguo:open", (event, input: unknown) => {
+    assertTrusted(event);
+    assertLeisureAvailable();
+    if (quitPending) throw new Error("应用正在退出。");
+    return hongguoController().open(input);
+  });
+  ipcMain.handle("hongguo:close", event => { assertTrusted(event); return hongguoController().close(); });
   ipcMain.handle("media:transport-state", event => { assertTransportSender(event); return currentMediaState(); });
   ipcMain.handle("media:set-playing", (event, playing: unknown, revision: unknown, provider: unknown) => {
     assertTransportSender(event);
@@ -995,6 +1012,7 @@ if (!app.requestSingleInstanceLock()) {
     dataManagement?.dispose();
     bossKey?.dispose();
     youtube?.dispose();
+    hongguo?.dispose();
     bilibili?.dispose();
     player?.dispose();
     holidays?.dispose();
@@ -1049,6 +1067,13 @@ if (!app.requestSingleInstanceLock()) {
         },
       });
       youtube = await createYouTubeWindow({ extensionDirectory, onState: onYouTubeState, onTransportState: onYouTubeTransport }).catch(() => null);
+      hongguo = createHongguoWindow({
+        root,
+        preload: join(__dirname, "hongguo-preload.cjs"),
+        chromePreload: join(__dirname, "hongguo-chrome-preload.cjs"),
+        devServer,
+        onState: state => sendMain("hongguo:state", state),
+      });
       broadcastCurrentMedia();
       bossKey = await createBossKeyController({
         directory: app.getPath("userData"), shortcuts: globalShortcut,
@@ -1090,6 +1115,7 @@ if (!app.requestSingleInstanceLock()) {
           await bossKey?.flush();
           await youtube?.pauseAndHide();
           await youtube?.flush();
+          await hongguo?.flush();
           await holidays?.flush().catch(() => {});
           await floating?.flush();
           if (lastWriteError)

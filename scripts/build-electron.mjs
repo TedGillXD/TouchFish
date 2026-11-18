@@ -9,7 +9,12 @@ export async function buildElectron() {
   await generateIcons();
   await build({
     absWorkingDir: root,
-    entryPoints: { main: "electron/main.ts", preload: "electron/preload.ts" },
+    entryPoints: {
+      main: "electron/main.ts",
+      preload: "electron/preload.ts",
+      "hongguo-preload": "electron/hongguo-preload.ts",
+      "hongguo-chrome-preload": "electron/hongguo-chrome-preload.ts",
+    },
     outdir: "dist-electron",
     outExtension: { ".js": ".cjs" },
     bundle: true,

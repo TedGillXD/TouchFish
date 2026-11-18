@@ -5,12 +5,14 @@ import type { HolidayState } from "./holiday-types";
 import type { BossKeyApi } from "./boss-key-types";
 import type { MediaControlApi } from "./media-types";
 import type { YouTubeBridge } from "./youtube-types";
+import type { HongguoApi, HongguoWindowAction } from "./hongguo-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "./bilibili-types";
 import type { BiliHistoryState } from "./bilibili-history-types";
 import type { DataManagementApi } from "./data-management-types";
 
 declare global {
   interface Window {
+    hongguoWindow?: { action(action: HongguoWindowAction): void };
     touchFish?: {
       readonly platform: string;
       loadData(): Promise<AppData | null>;
@@ -26,6 +28,7 @@ declare global {
       bossKey: BossKeyApi;
       media: MediaControlApi;
       youtube: YouTubeBridge;
+      hongguo: HongguoApi;
       bilibili: {
         getHistory(): Promise<BiliHistoryState>;
         removeHistory(bvid: string): Promise<BiliHistoryState>;

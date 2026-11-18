@@ -1,0 +1,43 @@
+body.hongguo-window-mode {
+  background: #161c19;
+  overflow: hidden;
+}
+.hongguo-window-mode #root { display: block; }
+.hongguo-window-bar {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #eaf1ed;
+  background: #202723;
+  border-bottom: 1px solid #ffffff12;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.hongguo-window-navigation, .hongguo-window-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.hongguo-window-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.hongguo-window-title svg { color: #7ed2a8; }
+.hongguo-window-bar button {
+  width: 28px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  color: #bdc9c2;
+}
+.hongguo-window-bar button:hover { color: #fff; background: #ffffff16; }
+.hongguo-window-buttons button:last-child:hover { background: #9b4949; }

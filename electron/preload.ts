@@ -6,6 +6,7 @@ import type { HolidayState } from "../src/holiday-types";
 import type { BossKeyState } from "../src/boss-key-types";
 import type { MediaProvider, MediaTransportState } from "../src/media-types";
 import type { YouTubeBrowser, YouTubePlayerState } from "../src/youtube-types";
+import type { HongguoState } from "../src/hongguo-types";
 import type { BiliAuthState, BiliDanmaku, BiliMode, BiliPlayback, BiliPlayerState, BiliPlayRequest, BiliVideo, BiliTransportCommand, BiliTransportReport, BiliTransportState } from "../src/bilibili-types";
 import type { BiliHistoryState } from "../src/bilibili-history-types";
 import type { BackupPreview, DataManagementState, GitSyncConfig } from "../src/data-management-types";
@@ -60,6 +61,12 @@ contextBridge.exposeInMainWorld("touchFish", {
     getTransportState: (): Promise<MediaTransportState> => ipcRenderer.invoke("media:transport-state"),
     setPlaying: (playing: boolean, revision: number, provider: MediaProvider): Promise<BiliTransportState> => ipcRenderer.invoke("media:set-playing", playing, revision, provider),
     onTransportState: (callback: (state: MediaTransportState) => void) => listen("media:transport-state", callback),
+  },
+  hongguo: {
+    getState: (): Promise<HongguoState> => ipcRenderer.invoke("hongguo:get"),
+    open: (input?: string): Promise<HongguoState> => ipcRenderer.invoke("hongguo:open", input),
+    close: (): Promise<void> => ipcRenderer.invoke("hongguo:close"),
+    onState: (callback: (state: HongguoState) => void): (() => void) => listen("hongguo:state", callback),
   },
   youtube: {
     getState: (): Promise<YouTubePlayerState> => ipcRenderer.invoke("youtube:get"),

@@ -59,6 +59,7 @@ import UpdatePanel from "./UpdatePanel";
 import FloatingSettings from "./FloatingSettings";
 import BilibiliPanel from "./BilibiliPanel";
 import YouTubePanel from "./YouTubePanel";
+import HongguoPanel from "./HongguoPanel";
 import BossKeySettings from "./BossKeySettings";
 import DataManagementPanel from "./DataManagementPanel";
 import OvertimePanel from "./OvertimePanel";
@@ -80,7 +81,7 @@ import {
   shortDate,
 } from "./Payroll";
 
-type View = "home" | "settings" | "calendar" | "history" | "payroll" | "overtime" | "bilibili" | "youtube";
+type View = "home" | "settings" | "calendar" | "history" | "payroll" | "overtime" | "bilibili" | "youtube" | "hongguo";
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 const money = (n: number) =>
   n.toLocaleString("zh-CN", {
@@ -106,6 +107,7 @@ function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState<View>("home");
+  const leisureOpen = view === "bilibili" || view === "youtube" || view === "hongguo";
   const [payrollFocus, setPayrollFocus] = useState<string | undefined>();
   const [calendarFocus, setCalendarFocus] = useState<string | undefined>();
   const [hidden, setHidden] = useState(!!window.touchFish);
@@ -363,10 +365,10 @@ function App() {
         </button>
         <div className="header-actions">
           <button
-            className={`icon-button ${view === "bilibili" || view === "youtube" ? "selected" : ""}`}
+            className={`icon-button ${leisureOpen ? "selected" : ""}`}
             title="摸鱼 · 视频与音频"
             aria-label="摸鱼"
-            onClick={() => setView(view === "bilibili" || view === "youtube" ? "home" : "bilibili")}
+            onClick={() => setView(leisureOpen ? "home" : "bilibili")}
           >
             <Tv size={18} />
           </button>
@@ -710,12 +712,14 @@ function App() {
           </>
         )}
 
-        {(view === "bilibili" || view === "youtube") && <div className="leisure-tabs" role="tablist" aria-label="摸鱼平台">
+        {leisureOpen && <div className="leisure-tabs" role="tablist" aria-label="摸鱼平台">
           <button role="tab" aria-selected={view === "bilibili"} onClick={() => setView("bilibili")}>B 站</button>
+          <button role="tab" aria-selected={view === "hongguo"} onClick={() => setView("hongguo")}>红果短剧</button>
           <button role="tab" aria-selected={view === "youtube"} onClick={() => setView("youtube")}>YouTube</button>
         </div>}
         {view === "bilibili" && <BilibiliPanel onBack={() => setView("home")} />}
         {view === "youtube" && <YouTubePanel onBack={() => setView("home")} />}
+        {view === "hongguo" && <HongguoPanel onBack={() => setView("home")} />}
         {view === "overtime" && (
           <>
             <PanelTitle title="加班" subtitle="记录时长与税前加班费" onBack={() => setView("home")} />

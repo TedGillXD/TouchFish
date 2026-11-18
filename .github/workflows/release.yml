@@ -138,6 +138,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/boss-key-smoke.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify frameless Hongguo playback and session persistence
+        if: matrix.platform == 'win32'
+        timeout-minutes: 5
+        run: node scripts/hongguo-smoke.mjs
       - name: Verify backup import export and recovery
         if: matrix.platform == 'win32'
         timeout-minutes: 5
@@ -215,12 +219,13 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          ## 1.6.2 更新内容
+          ## 1.6.3 更新内容
 
-          - 首页「今日工作」旁新增「加班」。可按秒计时、补录、编辑和删除记录，支持登记休息日的部分或全部补休。
-          - 按中国大陆标准工时制的法定最低标准估算。小时工资为月工资基数 ÷ 21.75 ÷ 8。工作日延时按 150%，休息日未补休时长按 200%，法定节假日当天按 300%。每笔记录需确认加班类型。
-          - 支持设置独立的加班工资基数。默认用税前月薪估算，已保存的记录保留各自基数。
-          - 加班费计入今日收入和对应薪资周期。加班记录随本地和 Git 备份保存，恢复缺少加班字段的旧备份时保留本机加班数据。
+          - 「摸鱼 → 红果短剧」可打开官网，也可粘贴官网链接直达剧集。小窗无系统边框，可拖动、缩放和最小化。点播放器的全屏按钮可让视频铺满小窗。
+          - 在小窗点击官网「登录」，用手机红果短剧 App 扫码。登录会话保存在独立的本地浏览会话中，可观看的剧集由官网决定。
+          - 老板键会暂停并收起红果小窗。恢复小窗后由用户手动继续播放。
+
+          已在 Windows 实测官网扫码入口与公开剧集播放，并用测试会话验证重启后保留登录状态。真实账号扫码仍待实机验收。
 
           YouTube 浏览器扩展入口仍属实验功能，需在 Chrome / Edge 手动加载应用附带的配套扩展并连接浏览器。真实账号登录和 YouTube 网络播放尚未完成实机验收。
 
